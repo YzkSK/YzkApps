@@ -51,7 +51,7 @@ export const Forbidden = () => (
     code="403"
     title="アクセス権限がありません"
     message="このページを表示するにはログインが必要です。"
-    action={{ label: 'ログインする', href: '/app/login' }}
+    action={{ label: 'ログインする', href: '/login' }}
   />
 );
 

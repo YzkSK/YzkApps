@@ -5,7 +5,7 @@ import { usePageTitle } from '@/app/shared/usePageTitle';
 
 afterEach(() => {
   cleanup();
-  document.title = 'My PortFolio'; // 念のためリセット
+  document.title = 'YzkApps'; // 念のためリセット
 });
 
 const TitleComponent = ({ title }: { title: string }) => {
@@ -19,11 +19,11 @@ describe('usePageTitle (結合テスト)', () => {
     expect(document.title).toBe('ダッシュボード');
   });
 
-  it('アンマウント時に document.title が "My PortFolio" に戻る', () => {
+  it('アンマウント時に document.title が "YzkApps" に戻る', () => {
     const { unmount } = render(<TitleComponent title="設定" />);
     expect(document.title).toBe('設定');
     act(() => unmount());
-    expect(document.title).toBe('My PortFolio');
+    expect(document.title).toBe('YzkApps');
   });
 
   it('title が変わると document.title も更新される', () => {

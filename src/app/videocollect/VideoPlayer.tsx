@@ -310,7 +310,7 @@ export const VideoPlayer = () => {
       });
     }, 1000);
     autoplayNavRef.current = setTimeout(() => {
-      navigate(`/app/videocollect/play?id=${encodeURIComponent(file.id)}&name=${encodeURIComponent(file.name)}`);
+      navigate(`/videocollect/play?id=${encodeURIComponent(file.id)}&name=${encodeURIComponent(file.name)}`);
     }, AUTOPLAY_SECONDS * 1000);
   }, [navigate]);
 
@@ -527,7 +527,7 @@ export const VideoPlayer = () => {
         <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: 14, textAlign: 'center', padding: '0 24px' }}>
           {loadError}
         </p>
-        <Link to="/app/videocollect" style={{ color: '#60a5fa', fontSize: 13 }}>
+        <Link to="/videocollect" style={{ color: '#60a5fa', fontSize: 13 }}>
           ← 動画一覧に戻る
         </Link>
       </div>
@@ -566,7 +566,7 @@ export const VideoPlayer = () => {
         flexShrink: 0,
       }}>
         <Link
-          to="/app/videocollect"
+          to="/videocollect"
           style={{ color: 'var(--vc-text-primary)', textDecoration: 'none', fontSize: 20, lineHeight: 1 }}
           aria-label="戻る"
         >
@@ -1092,7 +1092,7 @@ export const VideoPlayer = () => {
                 {(expandedSameTag ? sameTagFiles : sameTagFiles.slice(0, REC_INITIAL)).map(f => (
                   <Link
                     key={f.id}
-                    to={`/app/videocollect/play?id=${encodeURIComponent(f.id)}&name=${encodeURIComponent(f.name)}`}
+                    to={`/videocollect/play?id=${encodeURIComponent(f.id)}&name=${encodeURIComponent(f.name)}`}
                     className="vc-rec-card"
                   >
                     <div className="vc-rec-thumb">
@@ -1147,7 +1147,7 @@ export const VideoPlayer = () => {
                 {(expandedSimilar ? similarFiles : similarFiles.slice(0, REC_INITIAL)).map(f => (
                   <Link
                     key={f.id}
-                    to={`/app/videocollect/play?id=${encodeURIComponent(f.id)}&name=${encodeURIComponent(f.name)}`}
+                    to={`/videocollect/play?id=${encodeURIComponent(f.id)}&name=${encodeURIComponent(f.name)}`}
                     className="vc-rec-card"
                   >
                     <div className="vc-rec-thumb">

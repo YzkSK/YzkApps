@@ -19,7 +19,7 @@ export const AppNotInstalled = () => (
       マーケットプレイスから導入すると利用できます。
     </p>
     <Link
-      to="/app/marketplace"
+      to="/marketplace"
       style={{
         display: 'inline-block',
         marginTop: 8,

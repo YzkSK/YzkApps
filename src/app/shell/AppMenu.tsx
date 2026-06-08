@@ -26,15 +26,15 @@ export const AppMenu = () => {
   const { menuSections } = useInstalledApps();
 
   const isActive = (path: string) =>
-    pathname === `/app/${path}` ||
-    (path !== 'dashboard' && pathname.startsWith(`/app/${path}`));
+    pathname === `/${path}` ||
+    (path !== 'dashboard' && pathname.startsWith(`/${path}`));
 
   const renderLink = (id: string, path: string, icon: string, label: string) => {
     const active = isActive(path);
     return (
       <Link
         key={id}
-        to={`/app/${path}`}
+        to={`/${path}`}
         onClick={() => setOpen(false)}
         style={menuItemStyle(active)}
       >

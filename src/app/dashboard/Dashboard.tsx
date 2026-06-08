@@ -9,9 +9,9 @@ import { Button } from '@/components/ui/button';
 
 
 const APPS = [
-  { to: '/app/timetable',    label: '時間割', description: '授業・時間割の管理' },
-  { to: '/app/quiz',         label: '問題集', description: '問題登録・ランダム出題' },
-  { to: '/app/videocollect', label: '動画',   description: 'Google Drive 動画の管理・再生' },
+  { to: '/timetable',    label: '時間割', description: '授業・時間割の管理' },
+  { to: '/quiz',         label: '問題集', description: '問題登録・ランダム出題' },
+  { to: '/videocollect', label: '動画',   description: 'Google Drive 動画の管理・再生' },
 ];
 
 export const Dashboard = () => {
@@ -20,7 +20,7 @@ export const Dashboard = () => {
 
   const handleLogout = async () => {
     await signOut(auth);
-    navigate('/app/login');
+    navigate('/login');
   };
 
   return (
@@ -28,7 +28,7 @@ export const Dashboard = () => {
       <header className="app-header">
         <h1>ホーム</h1>
         <div className="app-user-info">
-          <Link to="/app/settings" className="app-avatar-btn" aria-label="設定">
+          <Link to="/settings" className="app-avatar-btn" aria-label="設定">
             <User size={18} />
           </Link>
           <Button variant="outline" onClick={handleLogout}>ログアウト</Button>

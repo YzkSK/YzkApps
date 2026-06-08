@@ -237,7 +237,7 @@ export const Videocollect = () => {
         <div className="vc-unauth">
           <p className="vc-unauth-title">Google Drive が連携されていません</p>
           <p className="vc-unauth-desc">設定画面から Google Drive に接続してください</p>
-          <Link to="/app/settings" className="vc-unauth-link">設定へ</Link>
+          <Link to="/settings" className="vc-unauth-link">設定へ</Link>
         </div>
       </AppLayout>
     );

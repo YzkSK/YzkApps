@@ -14,7 +14,6 @@ window.addEventListener('error', (e) => {
   clearCachesAndReload();
 }, true);
 
-import { App } from './portfolio/App'
 import { createBrowserRouter, RouterProvider, Route, Routes } from 'react-router-dom';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import { AuthProvider } from './app/auth/AuthContext';
@@ -115,9 +114,8 @@ const AppRoutes = () => (
 );
 
 const router = createBrowserRouter([
-  { path: '/',      element: <App /> },
-  { path: '/app/*', element: <AppRoutes /> },
-  { path: '*',      element: <NotFound /> },
+  { path: '/*', element: <AppRoutes /> },
+  { path: '*',  element: <NotFound /> },
 ]);
 
 const root = document.getElementById('root');

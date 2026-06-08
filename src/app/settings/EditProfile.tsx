@@ -164,7 +164,7 @@ export const EditProfile = () => {
       className="app-settings-main"
       title="ユーザー情報の変更"
       headerActions={
-        <button onClick={() => navigate('/app/settings')} className="app-logout-btn">戻る</button>
+        <button onClick={() => navigate('/settings')} className="app-logout-btn">戻る</button>
       }
     >
         <Section title="ユーザー名" onSubmit={handleUsername} {...usernameMsg}>

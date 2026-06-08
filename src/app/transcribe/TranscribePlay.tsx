@@ -75,7 +75,7 @@ export const TranscribePlay: React.FC = () => {
       const path = `users/${currentUser.uid}/transcribe/transcriptions/${transcriptionId}`;
       await deleteDoc(doc(db, path));
       addToast('削除しました', 'normal');
-      navigate('/app/transcribe');
+      navigate('/transcribe');
     } catch (err: any) {
       // eslint-disable-next-line no-console
       console.error('Delete error:', err);
@@ -116,7 +116,7 @@ export const TranscribePlay: React.FC = () => {
       headerActions={(
         <div className="transcribe-play-header-actions">
           <Button asChild variant="outline" size="sm">
-            <Link to="/app/transcribe">← 一覧</Link>
+            <Link to="/transcribe">← 一覧</Link>
           </Button>
           <Button variant="outline" size="sm" onClick={onSave} disabled={!isDirty} aria-label="保存">
             保存

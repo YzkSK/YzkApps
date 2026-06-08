@@ -61,7 +61,7 @@ export const ResetPassword = () => {
           <p style={{ color: 'var(--app-text-secondary)', marginBottom: '1.5rem' }}>
             このリンクは無効または期限切れです。<br />再度パスワード再設定をリクエストしてください。
           </p>
-          <button className="app-toggle-btn" onClick={() => navigate('/app/login')}>
+          <button className="app-toggle-btn" onClick={() => navigate('/login')}>
             ログインページへ
           </button>
         </div>
@@ -77,7 +77,7 @@ export const ResetPassword = () => {
           <p className="app-settings-success" style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
             パスワードを更新しました。
           </p>
-          <button className="app-toggle-btn" onClick={() => navigate('/app/login')}>
+          <button className="app-toggle-btn" onClick={() => navigate('/login')}>
             ログインする
           </button>
         </div>

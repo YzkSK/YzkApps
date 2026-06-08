@@ -28,7 +28,7 @@ export const ProtectedRoute = ({ children, appId }: Props) => {
       {username === null && (
         <div className="app-username-banner">
           ユーザー名が設定されていません。
-          <Link to="/app/settings" className="app-username-banner-link">設定ページ</Link>
+          <Link to="/settings" className="app-username-banner-link">設定ページ</Link>
           から登録してください。
         </div>
       )}

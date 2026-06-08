@@ -29,7 +29,7 @@ export const Marketplace = () => {
 
   const handleLogout = async () => {
     await signOut(auth);
-    navigate('/app/login');
+    navigate('/login');
   };
   const [uninstallTarget, setUninstallTarget] = useState<UninstallTarget | null>(null);
   const [processing, setProcessing] = useState(false);
@@ -56,7 +56,7 @@ export const Marketplace = () => {
       toasts={toasts}
       headerActions={
         <div className="app-user-info">
-          <Link to="/app/settings" className="app-avatar-btn" aria-label="設定">
+          <Link to="/settings" className="app-avatar-btn" aria-label="設定">
             <User size={18} />
           </Link>
           <Button variant="outline" onClick={handleLogout}>ログアウト</Button>

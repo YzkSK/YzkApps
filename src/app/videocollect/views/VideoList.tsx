@@ -28,10 +28,10 @@ export const VideoList = ({ files, tags, playingId, offlineIds, onTagEdit, onRen
             {/* サムネイル */}
             <div
               className="vc-list-thumb"
-              onClick={() => navigate(`/app/videocollect/play?id=${encodeURIComponent(file.id)}&name=${encodeURIComponent(file.name)}`)}
+              onClick={() => navigate(`/videocollect/play?id=${encodeURIComponent(file.id)}&name=${encodeURIComponent(file.name)}`)}
               role="button"
               tabIndex={0}
-              onKeyDown={e => { if (e.key === 'Enter') navigate(`/app/videocollect/play?id=${encodeURIComponent(file.id)}&name=${encodeURIComponent(file.name)}`); }}
+              onKeyDown={e => { if (e.key === 'Enter') navigate(`/videocollect/play?id=${encodeURIComponent(file.id)}&name=${encodeURIComponent(file.name)}`); }}
             >
               {file.thumbnailLink
                 ? <img src={file.thumbnailLink} alt={file.name} loading="lazy" />

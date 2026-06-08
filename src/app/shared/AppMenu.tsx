@@ -2,11 +2,11 @@ import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 
 const MENU_ITEMS = [
-  { to: '/app/dashboard',    label: 'ホーム',  icon: '🏠' },
-  { to: '/app/timetable',    label: '時間割',  icon: '📅' },
-  { to: '/app/quiz',         label: '問題集',  icon: '📚' },
-  { to: '/app/videocollect', label: '動画',    icon: '🎬' },
-  { to: '/app/settings',     label: '設定',    icon: '⚙️' },
+  { to: '/dashboard',    label: 'ホーム',  icon: '🏠' },
+  { to: '/timetable',    label: '時間割',  icon: '📅' },
+  { to: '/quiz',         label: '問題集',  icon: '📚' },
+  { to: '/videocollect', label: '動画',    icon: '🎬' },
+  { to: '/settings',     label: '設定',    icon: '⚙️' },
 ];
 
 export const AppMenu = () => {
@@ -72,7 +72,7 @@ export const AppMenu = () => {
 
         <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '0 10px' }}>
           {MENU_ITEMS.map(item => {
-            const active = pathname === item.to || (item.to !== '/app/dashboard' && pathname.startsWith(item.to));
+            const active = pathname === item.to || (item.to !== '/dashboard' && pathname.startsWith(item.to));
             return (
               <Link
                 key={item.to}

@@ -134,7 +134,7 @@ export const Quiz = () => {
 
   const handleLogout = async () => {
     await signOut(auth);
-    navigate('/app/login');
+    navigate('/login');
   };
 
   // ── 問題集 CRUD ──────────────────────────────────────────
@@ -605,7 +605,7 @@ export const Quiz = () => {
 
       {activeSetId === null && sets.length > 0 && (
         <div className="fixed bottom-[56px] left-0 right-0 px-[14px] flex justify-center pointer-events-none">
-          <Button className="w-full max-w-[640px] pointer-events-auto" variant="default" onClick={() => navigate('/app/quiz/play')}>
+          <Button className="w-full max-w-[640px] pointer-events-auto" variant="default" onClick={() => navigate('/quiz/play')}>
             回答する
           </Button>
         </div>

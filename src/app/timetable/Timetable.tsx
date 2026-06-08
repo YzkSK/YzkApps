@@ -284,7 +284,7 @@ export const Timetable = () => {
       className="tt-main"
       title="時間割"
       headerActions={
-        <Button variant="outline" className="tt-header-logout" onClick={async () => { await signOut(auth); navigate('/app/login'); }}>ログアウト</Button>
+        <Button variant="outline" className="tt-header-logout" onClick={async () => { await signOut(auth); navigate('/login'); }}>ログアウト</Button>
       }
       dbError={dbError}
       toasts={toasts}

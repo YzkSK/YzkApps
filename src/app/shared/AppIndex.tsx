@@ -3,5 +3,5 @@ import { useAuth } from '../auth/AuthContext';
 
 export const AppIndex = () => {
   const { currentUser } = useAuth();
-  return <Navigate to={currentUser ? '/app/dashboard' : '/app/login'} replace />;
+  return <Navigate to={currentUser ? '/dashboard' : '/login'} replace />;
 };

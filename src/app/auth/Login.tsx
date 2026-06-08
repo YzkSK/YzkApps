@@ -72,7 +72,7 @@ export const Login = () => {
       } else {
         await signInWithEmailAndPassword(auth, email, password);
       }
-      navigate('/app/dashboard');
+      navigate('/dashboard');
     } catch (err: unknown) {
       if (err instanceof Error) {
         const code = (err as { code?: string }).code ?? '';

@@ -307,7 +307,7 @@ export const QuizPlay = () => {
           <h1 className="app-page-title">出題する</h1>
         </div>
         <div className="app-header-actions">
-          <Button variant="outline" onClick={() => navigate('/app/quiz')}>← 問題集一覧</Button>
+          <Button variant="outline" onClick={() => navigate('/quiz')}>← 問題集一覧</Button>
         </div>
       </header>
     );
@@ -445,7 +445,7 @@ export const QuizPlay = () => {
                 <span className="text-[32px] block mb-3">📚</span>
                 問題集がまだありません
                 <span className="block mt-2.5">
-                  <Button variant="default" onClick={() => navigate('/app/quiz')}>
+                  <Button variant="default" onClick={() => navigate('/quiz')}>
                     問題集を作成する →
                   </Button>
                 </span>

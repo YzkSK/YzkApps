@@ -24,7 +24,7 @@ export const Settings = () => {
       className="app-settings-body"
       title="設定"
       headerActions={
-        <button onClick={() => navigate('/app/dashboard')} className="app-logout-btn">戻る</button>
+        <button onClick={() => navigate('/dashboard')} className="app-logout-btn">戻る</button>
       }
       toasts={toasts}
     >
@@ -60,7 +60,7 @@ export const Settings = () => {
                 <span className="app-settings-profile-value">{currentUser?.email}</span>
               </div>
             </div>
-            <Link to="/app/settings/edit" className="app-settings-edit-link">
+            <Link to="/settings/edit" className="app-settings-edit-link">
               ユーザー情報を変更
               <span className="app-settings-edit-arrow">›</span>
             </Link>

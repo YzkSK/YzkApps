@@ -32,7 +32,7 @@ export const VideoCard = ({ file, tags, accessToken, isPlaying, isOffline, onTag
   const previewSrc = `${proxyUrl}/stream/${encodeURIComponent(file.id)}?token=${encodeURIComponent(accessToken)}`;
 
   const handlePlay = () => {
-    navigate(`/app/videocollect/play?id=${encodeURIComponent(file.id)}&name=${encodeURIComponent(file.name)}`);
+    navigate(`/videocollect/play?id=${encodeURIComponent(file.id)}&name=${encodeURIComponent(file.name)}`);
   };
 
   const handleTitleClick = (e: React.MouseEvent) => {

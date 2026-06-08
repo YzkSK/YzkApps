@@ -1,7 +1,7 @@
 {
   "name": "YzkApps",
   "short_name": "YzkApps",
-  "start_url": "/app/dashboard",
+  "start_url": "/dashboard",
   "display": "standalone",
   "background_color": "#f8f9fa",
   "theme_color": "#1a1a1a",
