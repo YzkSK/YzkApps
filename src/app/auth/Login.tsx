@@ -98,8 +98,13 @@ export const Login = () => {
       const fn = httpsCallable(functions, 'sendPasswordResetEmail');
       await fn({ email: email.trim() });
       setResetSent(true);
-    } catch {
-      setErrors({ form: 'メールの送信に失敗しました。メールアドレスを確認してください' });
+    } catch (e: unknown) {
+      const code = (e as { code?: string }).code;
+      if (code === 'functions/resource-exhausted') {
+        setErrors({ form: 'しばらく時間をおいてから再試行してください [E002]' });
+      } else {
+        setErrors({ form: 'メールの送信に失敗しました。メールアドレスを確認してください [E003]' });
+      }
     }
   };
 

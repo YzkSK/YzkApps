@@ -57,11 +57,16 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
     setDarkMode(next);
     localStorage.setItem('tt-dark-mode', String(next));
     if (currentUser) {
-      await setDoc(
-        doc(db, 'users', currentUser.uid, 'profile', 'data'),
-        { darkMode: next },
-        { merge: true },
-      );
+      try {
+        await setDoc(
+          doc(db, 'users', currentUser.uid, 'profile', 'data'),
+          { darkMode: next },
+          { merge: true },
+        );
+      } catch (e) {
+        // ローカルには反映済みのため rollback なし
+        console.error('ThemeContext: darkMode保存失敗', e);
+      }
     }
   };
 

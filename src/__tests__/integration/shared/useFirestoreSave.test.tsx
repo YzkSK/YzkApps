@@ -93,6 +93,33 @@ describe('useFirestoreSave (結合テスト)', () => {
     expect(onSuccess).toHaveBeenCalledTimes(1);
   });
 
+  it('アンマウント後に onSuccess は呼ばれない', async () => {
+    mockDoc.mockReturnValue('docRef');
+    let resolveSetDoc!: () => void;
+    mockSetDoc.mockReturnValue(new Promise<void>(res => { resolveSetDoc = res; }));
+    const onSuccess = vi.fn();
+
+    const { result, unmount } = renderHook(() =>
+      useFirestoreSave({
+        currentUser: makeUser(),
+        path: 'users/uid/quiz/data',
+        onSuccess,
+      }),
+    );
+
+    act(() => result.current({ value: 'test' }));
+    await act(() => vi.runAllTimersAsync());
+
+    // setDoc が完了する前にアンマウント
+    unmount();
+
+    // setDoc を解決する
+    await act(async () => { resolveSetDoc(); });
+
+    // アンマウント済みなので onSuccess は呼ばれない
+    expect(onSuccess).not.toHaveBeenCalled();
+  });
+
   it('setDoc が失敗しても onSuccess は呼ばれない（console.error のみ）', async () => {
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     mockDoc.mockReturnValue('docRef');

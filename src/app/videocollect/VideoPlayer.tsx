@@ -52,6 +52,7 @@ export const VideoPlayer = () => {
 
   const { toasts, addToast } = useToast();
   const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [videoNonce, setVideoNonce] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [videoError, setVideoError] = useState<'processing' | 'codec' | 'error' | null>(null);
   const [vcData, setVcData] = useState<VcData>(VC_INITIAL_DATA);
@@ -175,7 +176,6 @@ export const VideoPlayer = () => {
         return null;
       });
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fileId]);
 
   useEffect(() => {
@@ -206,6 +206,14 @@ export const VideoPlayer = () => {
           return;
         }
         setAccessToken(token);
+        // nonce を取得してから videoSrc に使用する（アクセストークンをログに残さないため）
+        fetchNonce(token).then(nonce => {
+          if (nonce) {
+            setVideoNonce(nonce);
+          } else {
+            setLoadError(`動画の読み込みに失敗しました [${VC_ERROR_CODES.NONCE_FETCH}]`);
+          }
+        });
       })
       .catch(e => {
         console.error('VideoPlayer 読み込みエラー:', e);
@@ -246,7 +254,6 @@ export const VideoPlayer = () => {
         }
       })
       .catch(e => console.error('[VideoPlayer] failed to fetch file metadata', e));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accessToken, fileId]);
 
   // レコメンドから別動画に遷移した際にプレイヤー状態をリセットしてスクロール
@@ -353,7 +360,7 @@ export const VideoPlayer = () => {
         case 'k':
         case 'K':
           e.preventDefault();
-          video.paused ? video.play() : video.pause();
+          if (video.paused) { video.play(); } else { video.pause(); }
           showControlsTemporary();
           break;
         case 'ArrowLeft':
@@ -386,12 +393,15 @@ export const VideoPlayer = () => {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showControlsTemporary]);
 
   const toggleFullscreen = () => {
     if (document.fullscreenElement || (document as Document & { webkitFullscreenElement?: Element }).webkitFullscreenElement) {
-      document.exitFullscreen?.() ?? (document as Document & { webkitExitFullscreen?: () => void }).webkitExitFullscreen?.();
+      if (document.exitFullscreen) {
+        document.exitFullscreen();
+      } else {
+        (document as Document & { webkitExitFullscreen?: () => void }).webkitExitFullscreen?.();
+      }
     } else {
       const el = containerRef.current;
       if (!el) return;
@@ -485,6 +495,24 @@ export const VideoPlayer = () => {
 
   const proxyUrl = import.meta.env.VITE_DRIVE_PROXY_URL as string;
 
+  const fetchNonce = useCallback(async (token: string): Promise<string | null> => {
+    if (!currentUser) return null;
+    try {
+      const idToken = await currentUser.getIdToken();
+      const resp = await fetch(`${proxyUrl}/nonce`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid: currentUser.uid, idToken, accessToken: token }),
+      });
+      if (!resp.ok) return null;
+      const data = await resp.json() as { nonce?: string };
+      return data.nonce ?? null;
+    } catch (e) {
+      console.error(`nonce 取得失敗 [${VC_ERROR_CODES.NONCE_FETCH}]:`, e);
+      return null;
+    }
+  }, [currentUser, proxyUrl]);
+
   // downloadQueue のダウンロード完了を監視して状態を更新する
   useEffect(() => {
     return subscribeTasks(() => {
@@ -517,8 +545,9 @@ export const VideoPlayer = () => {
     }
   };
 
-  const videoSrc = offlineBlobUrl ?? (accessToken
-    ? `${proxyUrl}/stream/${encodeURIComponent(fileId)}?token=${encodeURIComponent(accessToken)}`
+  // nonce を使ってアクセストークンを直接 URL に含めない（Cloudflare ログへの記録を防ぐ）
+  const videoSrc = offlineBlobUrl ?? (videoNonce
+    ? `${proxyUrl}/stream/${encodeURIComponent(fileId)}?token=${encodeURIComponent(videoNonce)}`
     : '');
 
   if (loadError && !offlineBlobUrl) {
@@ -534,7 +563,7 @@ export const VideoPlayer = () => {
     );
   }
 
-  if (!accessToken && !offlineBlobUrl) {
+  if ((!accessToken || !videoNonce) && !offlineBlobUrl) {
     return (
       <div className="vc-player-page" style={{ alignItems: 'center', justifyContent: 'center' }}>
         <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 14 }}>読み込み中…</p>
@@ -627,7 +656,17 @@ export const VideoPlayer = () => {
           }}
           onError={async () => {
             try {
-              const res = await fetch(`${proxyUrl}/stream/${encodeURIComponent(fileId)}?token=${encodeURIComponent(accessToken ?? '')}`, { method: 'HEAD' });
+              // nonce が期限切れの可能性があるため再取得を試みる
+              let nonce = videoNonce;
+              if (accessToken && !nonce) {
+                nonce = await fetchNonce(accessToken);
+                if (nonce) setVideoNonce(nonce);
+              }
+              const streamUrl = nonce
+                ? `${proxyUrl}/stream/${encodeURIComponent(fileId)}?token=${encodeURIComponent(nonce)}`
+                : '';
+              if (!streamUrl) { setVideoError('error'); return; }
+              const res = await fetch(streamUrl, { method: 'HEAD' });
               setVideoError(res.status === 503 ? 'processing' : 'error');
             } catch {
               setVideoError('error');
@@ -799,7 +838,7 @@ export const VideoPlayer = () => {
 
             <button
               className="vc-player-btn--play"
-              onClick={() => { const v = videoRef.current; if (!v) return; v.paused ? v.play() : v.pause(); }}
+              onClick={() => { const v = videoRef.current; if (!v) return; if (v.paused) { v.play(); } else { v.pause(); } }}
               aria-label={playing ? '一時停止' : '再生'}
             >
               {playing ? (

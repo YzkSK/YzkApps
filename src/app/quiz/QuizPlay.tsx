@@ -6,16 +6,17 @@ import '../shared/app.css';
 import './quiz.css';
 import {
   TOAST_DURATION_MS, EXAM_TIME_LIMIT_MS, EXAM_MAX_PROBLEMS, MASTER_THRESHOLD,
-  MAX_RECENT, RECENT_INITIAL_SHOW,
-  shuffle, filterProblems, buildProblemChoices, isAnswerCorrect, isWeak, isExamSession, isInvalidProblem,
-  getCategories, newProblemSet, parseProblem, parseProblemSet, parseRecentConfig, firestorePaths,
-  QUIZ_MODE_LABELS, formatRelativeTime, getInvalidCount,
+  MAX_RECENT,
+  shuffle, filterProblems, buildProblemChoices, isAnswerCorrect, isExamSession, isInvalidProblem,
+  newProblemSet, parseProblem, parseProblemSet, parseRecentConfig, firestorePaths,
   type Problem, type ProblemSet, type RecentConfig, type ActiveSession, type QuizSessionConfig,
   type OneByOneSession, type ExamSession, type QuizMode,
 } from './constants';
 import { useFirestoreData } from '../shared/useFirestoreData';
 import { useFirestoreSave } from '../shared/useFirestoreSave';
 import { QuizSession } from './views/QuizSession';
+import { SetSelectionView } from './views/SetSelectionView';
+import { QuizConfigView } from './views/QuizConfigView';
 import { Button } from '@/components/ui/button';
 import { AppMenu } from '../shell/AppMenu';
 import { usePageTitle } from '../shared/usePageTitle';
@@ -30,12 +31,12 @@ export const QuizPlay = () => {
   const [searchParams] = useSearchParams();
   usePageTitle('問題集');
 
-  const [showAllRecent, setShowAllRecent]   = useState(false);
+  const [showAllRecent, setShowAllRecent]     = useState(false);
   const initSetId = searchParams.get('set');
-  const [selectedSetIds, setSelectedSetIds] = useState<string[]>(initSetId ? [initSetId] : []);
+  const [selectedSetIds, setSelectedSetIds]   = useState<string[]>(initSetId ? [initSetId] : []);
   const [configConfirmed, setConfigConfirmed] = useState(false);
-  const [session, setSession]               = useState<ActiveSession | null>(null);
-  const { toasts, addToast }                = useToast(TOAST_DURATION_MS);
+  const [session, setSession]                 = useState<ActiveSession | null>(null);
+  const { toasts, addToast }                  = useToast(TOAST_DURATION_MS);
   const setsRef = useRef<ProblemSet[]>([]);
 
   const [categoryFilter, setCategoryFilter] = useState('');
@@ -133,19 +134,14 @@ export const QuizPlay = () => {
     saveToFirestore({ sets: next, recentConfigs: data.recentConfigs });
   }, [saveToFirestore, setSets, data.recentConfigs]);
 
-  const toggleBookmark  = (id: string) => updateProblemInSets(id, p => ({ ...p, bookmarked: !p.bookmarked }));
+  const toggleBookmark   = (id: string) => updateProblemInSets(id, p => ({ ...p, bookmarked: !p.bookmarked }));
   const handleUpdateMemo = (id: string, memo: string) => updateProblemInSets(id, p => ({ ...p, memo }));
 
-  // ── セッション設定 ──────────────────────────────────────
-  const categories  = getCategories(problems);
-  const weakCount   = problems.filter(isWeak).length;
-  const targetCount = filterProblems(problems, categoryFilter).length;
-
+  // ── セッション開始 ──────────────────────────────────────
   const startSession = (config: QuizSessionConfig) => {
     const filtered = filterProblems(problems, config.categoryFilter).filter(p => !isInvalidProblem(p));
     if (filtered.length === 0) { addToast('対象の問題がありません'); return; }
 
-    // 直近の記録を保存
     const newRecent: RecentConfig = {
       id: crypto.randomUUID(),
       setIds: selectedSetIds,
@@ -269,10 +265,8 @@ export const QuizPlay = () => {
     session.phase !== 'finished' &&
     session.phase !== 'reviewing';
 
-  // React Router のナビゲーションをブロック
   const blocker = useBlocker(isSessionInProgress);
 
-  // ブラウザのリロード・タブ閉じをブロック
   useEffect(() => {
     if (!isSessionInProgress) return;
     const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); };
@@ -319,183 +313,54 @@ export const QuizPlay = () => {
       toasts={toasts}
       header={playHeader}
     >
-
       <div className="max-w-[640px] mx-auto">
         {session !== null ? (
-          // ── 回答中 ─────────────────────────────────────
-          <>
-            <QuizSession
-              session={session}
-              problems={problems}
-              onFlashcardReveal={handleFlashcardReveal}
-              onFlashcardJudge={handleFlashcardJudge}
-              onWrittenInputChange={handleWrittenInputChange}
-              onWrittenSubmit={handleWrittenSubmit}
-              onWrittenNext={handleWrittenNext}
-              onChoiceSelect={handleChoiceSelect}
-              onChoiceNext={handleChoiceNext}
-              onExamNext={handleExamNext}
-              onExamPrev={handleExamPrev}
-              onExamWrittenInputChange={handleExamWrittenInputChange}
-              onSubmitExam={handleSubmitExam}
-              onTimeUp={handleTimeUp}
-              onEnd={endSession}
-              onInterrupt={handleInterrupt}
-              onJumpTo={handleJumpTo}
-              onToggleBookmark={toggleBookmark}
-              onUpdateMemo={handleUpdateMemo}
-              addToast={addToast}
-            />
-          </>
+          <QuizSession
+            session={session}
+            problems={problems}
+            onFlashcardReveal={handleFlashcardReveal}
+            onFlashcardJudge={handleFlashcardJudge}
+            onWrittenInputChange={handleWrittenInputChange}
+            onWrittenSubmit={handleWrittenSubmit}
+            onWrittenNext={handleWrittenNext}
+            onChoiceSelect={handleChoiceSelect}
+            onChoiceNext={handleChoiceNext}
+            onExamNext={handleExamNext}
+            onExamPrev={handleExamPrev}
+            onExamWrittenInputChange={handleExamWrittenInputChange}
+            onSubmitExam={handleSubmitExam}
+            onTimeUp={handleTimeUp}
+            onEnd={endSession}
+            onInterrupt={handleInterrupt}
+            onJumpTo={handleJumpTo}
+            onToggleBookmark={toggleBookmark}
+            onUpdateMemo={handleUpdateMemo}
+            addToast={addToast}
+          />
         ) : configConfirmed ? (
-          // ── 出題設定 ──────────────────────────────────
-          <>
-            <div className="bg-white dark:bg-[#1a1a1a] border border-[#e8e8e8] dark:border-[#333] rounded-[14px] p-[18px_16px] mb-5">
-              <div className="text-[12px] font-bold text-[#888] mb-3 uppercase tracking-[0.05em]">出題設定</div>
-
-              <div className="mb-[14px]">
-                <div className="text-[11px] text-[#888] font-semibold mb-[6px]">問題フィルター</div>
-                <select
-                  name="category-filter"
-                  className="w-full px-3 py-[9px] border-[1.5px] border-[#e0e0e0] dark:border-[#444] rounded-[9px] bg-white dark:bg-[#222] text-[13px] text-[#1a1a1a] dark:text-[#e0e0e0] font-semibold cursor-pointer appearance-none outline-none focus:border-[#1a1a1a] dark:focus:border-[#888]"
-                  value={categoryFilter}
-                  onChange={e => setCategoryFilter(e.target.value)}
-                >
-                  <option value="">すべて ({problems.length}件)</option>
-                  <option value="BOOKMARKED">★ ブックマーク</option>
-                  {weakCount > 0 && <option value="WEAK">⚡ 苦手問題 ({weakCount}件)</option>}
-                  {categories.map(c => (
-                    <option key={c} value={c}>{c} ({problems.filter(p => p.category === c).length}件)</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="mb-[14px]">
-                <div className="text-[11px] text-[#888] font-semibold mb-[6px]">モード</div>
-                <div className="qz-mode-btns">
-                  {(['oneByOne', 'exam'] as QuizMode[]).map(m => (
-                    <button
-                      key={m}
-                      className={`qz-mode-btn${quizMode === m ? ' qz-mode-btn--active' : ''}`}
-                      onClick={() => setQuizMode(m)}
-                    >
-                      {QUIZ_MODE_LABELS[m]}
-                      {m === 'exam' && <span className="text-[10px] opacity-70 block">最大50問・50分</span>}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between mt-4 pt-[14px] border-t border-[#f0f0f0] dark:border-[#333]">
-                <div className="text-[13px] text-[#888] font-semibold">対象: {targetCount}件</div>
-                <Button
-                  variant="default"
-                  onClick={() => startSession({ mode: quizMode, categoryFilter })}
-                  disabled={targetCount === 0}
-                >
-                  出題開始
-                </Button>
-              </div>
-            </div>
-          </>
+          <QuizConfigView
+            problems={problems}
+            categoryFilter={categoryFilter}
+            quizMode={quizMode}
+            onCategoryFilterChange={setCategoryFilter}
+            onQuizModeChange={setQuizMode}
+            onStart={() => startSession({ mode: quizMode, categoryFilter })}
+          />
         ) : (
-          // ── 問題集選択 ────────────────────────────────
-          <>
-            {/* 直近の記録 */}
-            {recentConfigs.length > 0 && (
-              <div className="mb-5">
-                <div className="text-[11px] font-bold text-[#aaa] uppercase tracking-[0.06em] mb-2">直近の記録</div>
-                {(showAllRecent ? recentConfigs : recentConfigs.slice(0, RECENT_INITIAL_SHOW)).map(config => {
-                  const validCount = config.setIds.filter(id => sets.some(s => s.id === id)).length;
-                  return (
-                    <div key={config.id} className="qz-recent-item" onClick={() => applyRecentConfig(config)}>
-                      <div className="qz-recent-main">
-                        <div className="qz-recent-names">{config.setNames.join(' + ')}</div>
-                        <div className="qz-recent-meta">
-                          {QUIZ_MODE_LABELS[config.mode]}
-                          {config.categoryFilter && ` · ${config.categoryFilter}`}
-                          {validCount < config.setIds.length && <span className="qz-recent-warn"> · 一部削除済み</span>}
-                        </div>
-                      </div>
-                      <div className="qz-recent-time">{formatRelativeTime(config.usedAt)}</div>
-                    </div>
-                  );
-                })}
-                {recentConfigs.length > RECENT_INITIAL_SHOW && (
-                  <button
-                    className="text-[12px] text-[#888] font-semibold mt-1 w-full text-center py-1 hover:text-[#1a1a1a] dark:hover:text-[#e0e0e0]"
-                    onClick={() => setShowAllRecent(v => !v)}
-                  >
-                    {showAllRecent ? '折りたたむ ▲' : `さらに表示 (${recentConfigs.length - RECENT_INITIAL_SHOW}件) ▼`}
-                  </button>
-                )}
-              </div>
-            )}
-
-            {/* 問題集チェックリスト */}
-            <div className="flex items-center justify-between mb-3">
-              <div className="text-sm font-black text-[#1a1a1a] dark:text-[#e0e0e0]">
-                問題集を選択
-                {selectedSetIds.length > 0 && <span className="text-sm font-semibold text-[#555] dark:text-[#aaa]"> ({selectedSetIds.length}件)</span>}
-              </div>
-            </div>
-
-            {sets.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-8">
-                <span className="text-[32px] block mb-3">📚</span>
-                問題集がまだありません
-                <span className="block mt-2.5">
-                  <Button variant="default" onClick={() => navigate('/quiz')}>
-                    問題集を作成する →
-                  </Button>
-                </span>
-              </p>
-            ) : (
-              <>
-                {sets.map(s => {
-                  const selected      = selectedSetIds.includes(s.id);
-                  const invalidCount  = getInvalidCount(s.problems);
-                  const disabled      = s.problems.length === 0 || invalidCount > 0;
-                  return (
-                    <div
-                      key={s.id}
-                      className={`qz-set-item qz-set-item--check${selected ? ' qz-set-item--selected' : ''}${disabled ? ' qz-set-item--disabled' : ''}`}
-                      onClick={() => !disabled && toggleSetSelection(s.id)}
-                    >
-                      <div className={`qz-set-checkbox${selected ? ' qz-set-checkbox--checked' : ''}`}>
-                        {selected ? '✓' : ''}
-                      </div>
-                      <div className="qz-set-info">
-                        <div className="qz-set-name">{s.name}</div>
-                        <div className="qz-set-count">
-                          {s.problems.length === 0
-                            ? '問題なし'
-                            : invalidCount > 0
-                              ? <span className="text-amber-500 text-[12px] font-semibold">⚠ {invalidCount}件の選択肢が不足</span>
-                              : `${s.problems.length}問`}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-
-                <div className="mt-4">
-                  <Button
-                    variant="default"
-                    className="w-full"
-                    disabled={selectedSetIds.length === 0}
-                    onClick={() => setConfigConfirmed(true)}
-                  >
-                    次へ →
-                  </Button>
-                </div>
-              </>
-            )}
-          </>
+          <SetSelectionView
+            sets={sets}
+            selectedSetIds={selectedSetIds}
+            recentConfigs={recentConfigs}
+            showAllRecent={showAllRecent}
+            onToggleAllRecent={() => setShowAllRecent(v => !v)}
+            onToggleSet={toggleSetSelection}
+            onApplyRecent={applyRecentConfig}
+            onNext={() => setConfigConfirmed(true)}
+            onNavigateToQuiz={() => navigate('/quiz')}
+          />
         )}
       </div>
 
-      {/* 離脱確認ダイアログ */}
       {blocker.state === 'blocked' && (
         <Dialog open={true} onOpenChange={() => blocker.reset?.()}>
           <DialogContent aria-describedby={undefined}>

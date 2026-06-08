@@ -10,3 +10,16 @@ GOOGLE_OAUTH_CLIENT_ID = "1081756109282-6a56radiar1g2bpv4b6vf15fj0fd65ql.apps.go
 # Secrets (set via: wrangler secret put GOOGLE_OAUTH_CLIENT_SECRET)
 # GOOGLE_OAUTH_CLIENT_SECRET
 # GOOGLE_SERVICE_ACCOUNT
+
+# KV Namespaces
+# ストリーミング用短命 nonce のストレージ（TTL: 300秒）
+[[kv_namespaces]]
+binding = "NONCE_KV"
+id = "41b5b9f486f74e26932955a858d804e3"
+preview_id = "3b5c14dbede8421481ac2874f1567b4f"
+
+# Firebase 公開鍵キャッシュ（ID トークン署名検証用）
+[[kv_namespaces]]
+binding = "PUBLIC_JWK_CACHE_KV"
+id = "28b6ba2f853b4f3cb8489832ca793a74"
+preview_id = "ba6bc6a0d6d449efaf70ef08a0a33a0c"

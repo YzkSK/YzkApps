@@ -32,7 +32,7 @@ export class ErrorBoundary extends Component<Props, State> {
     // chunk loadエラーはキャッシュをクリアして自動リロード
     if (this.state.isChunkError) {
       this.setState({ clearing: true });
-      clearCachesAndReload();
+      clearCachesAndReload().catch(e => console.error('キャッシュクリア失敗:', e));
     }
   }
 

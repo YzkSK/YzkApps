@@ -1,16 +1,15 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { ImageWithLoader } from './ImageWithLoader';
+import { ResultView } from './ResultView';
+import { useExamTimer } from './useExamTimer';
+import { useMemoEditor } from './useMemoEditor';
 import {
   type ActiveSession, type OneByOneSession, type ExamSession, type Problem,
-  isExamSession, isAnswerCorrect, buildProblemChoices, formatTime, formatElapsed,
+  isExamSession, buildProblemChoices, formatTime,
 } from '../constants';
-import { generateMemoExplanation, MemoGenError, MEMO_GEN_ERROR_CODES } from '../memoGenerator';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-
-type ResultFilter = 'all' | 'correct' | 'incorrect' | 'bookmarked';
-
 
 type Props = {
   session: ActiveSession;
@@ -44,109 +43,31 @@ export const QuizSession = ({
   onSubmitExam, onTimeUp,
   onEnd, onInterrupt, onJumpTo, onToggleBookmark, onUpdateMemo, addToast,
 }: Props) => {
-  const [resultFilter, setResultFilter] = useState<ResultFilter>('all');
   const [selectedChoice, setSelectedChoice] = useState<string | null>(null);
-  const [remainingMs, setRemainingMs]   = useState<number>(0);
-  const [editingMemoId, setEditingMemoId]     = useState<string | null>(null);
-  const [memoInput, setMemoInput]             = useState('');
-  const [generatingMemoId, setGeneratingMemoId] = useState<string | null>(null);
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
   const [showSheet, setShowSheet] = useState(true);
-  const timeUpFired = useRef(false);
 
   const isExam = isExamSession(session);
+  const remainingMs = useExamTimer(session, onTimeUp);
+  const { renderMemo } = useMemoEditor(problems, onUpdateMemo, addToast);
+
+  const getBookmarked = (id: string) => problems.find(p => p.id === id)?.bookmarked ?? false;
 
   // selectedChoice を currentIndex が変わるたびにリセット・復元
   useEffect(() => {
     if (isExam && session.phase === 'answering') {
-      const prev = session.answers[session.currentIndex];
+      const prev = (session as ExamSession).answers[session.currentIndex];
       setSelectedChoice(prev || null);
     } else {
       setSelectedChoice(null);
     }
   }, [session.currentIndex]);
 
-  // 試験モードタイマー
-  useEffect(() => {
-    if (!isExam || session.phase !== 'answering') return;
-    timeUpFired.current = false;
-
-    const tick = () => {
-      const rem = session.startedAt + session.timeLimit - Date.now();
-      setRemainingMs(rem);
-      if (rem <= 0 && !timeUpFired.current) {
-        timeUpFired.current = true;
-        onTimeUp();
-      }
-    };
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
-  }, [isExam, session.phase]);
-
-  const oneByOnePhase = !isExam ? (session as OneByOneSession).phase : null;
-
   // 一問一答: 現在の問題
   const oneByOneQ = !isExam ? session.queue[session.currentIndex] : null;
   // 試験: 現在の問題
   const examQ = isExam ? session.queue[session.currentIndex] : null;
   const currentQ = oneByOneQ ?? examQ;
-
-  // 最新の bookmarked / memo 状態を問題リストから取得
-  const getBookmarked = (id: string) => problems.find(p => p.id === id)?.bookmarked ?? false;
-  const getMemo       = (id: string) => problems.find(p => p.id === id)?.memo ?? '';
-
-  const startEditMemo = (id: string) => { setEditingMemoId(id); setMemoInput(getMemo(id)); };
-  const saveMemo = (id: string) => { onUpdateMemo(id, memoInput); setEditingMemoId(null); };
-
-  const generateMemo = async (id: string) => {
-    const problem = problems.find(p => p.id === id);
-    if (!problem) return;
-    setEditingMemoId(id);
-    setMemoInput('');
-    setGeneratingMemoId(id);
-    try {
-      await generateMemoExplanation(problem.question, problem.answer, text => setMemoInput(text));
-    } catch (e) {
-      console.error('AI解説生成エラー:', e);
-      const code = e instanceof MemoGenError && e.reason === 'no_api_key'
-        ? MEMO_GEN_ERROR_CODES.NO_API_KEY
-        : MEMO_GEN_ERROR_CODES.GENERATE;
-      addToast(`AI解説の生成に失敗しました [${code}]`, 'error');
-      setMemoInput('');
-    } finally {
-      setGeneratingMemoId(null);
-    }
-  };
-
-  const renderMemo = (id: string) => {
-    const isGenerating = generatingMemoId === id;
-    return editingMemoId === id ? (
-      <div className="qz-memo-edit">
-        <textarea
-          name="memo"
-          className="qz-memo-input"
-          value={memoInput}
-          onChange={e => setMemoInput(e.target.value)}
-          autoFocus={!isGenerating}
-          placeholder={isGenerating ? 'AI解説を生成中...' : 'メモを入力'}
-          readOnly={isGenerating}
-        />
-        <div className="qz-memo-edit-btns">
-          <Button variant="outline" size="sm" onClick={() => { setEditingMemoId(null); setGeneratingMemoId(null); }} disabled={isGenerating}>キャンセル</Button>
-          <Button variant="outline" size="sm" onClick={() => generateMemo(id)} disabled={isGenerating}>
-            {isGenerating ? '生成中...' : '✨ AI解説'}
-          </Button>
-          <Button variant="default" size="sm" onClick={() => saveMemo(id)} disabled={isGenerating}>保存</Button>
-        </div>
-      </div>
-    ) : (
-      <div className="qz-memo-row" onClick={() => startEditMemo(id)}>
-        {getMemo(id) ? <span className="qz-memo-text">📝 {getMemo(id)}</span> : <span className="qz-memo-placeholder">📝 メモを追加</span>}
-        <button className="qz-memo-ai-btn" onClick={e => { e.stopPropagation(); generateMemo(id); }}>✨</button>
-      </div>
-    );
-  };
 
   // 一問一答: choice オプション（安定化）
   const oneByOneChoiceOptions = useMemo(() => {
@@ -158,13 +79,12 @@ export const QuizSession = ({
   }, [isExam ? null : session.currentIndex]);
 
   // 試験: choice オプション（セッション開始時に全問分生成済み）
-  const examChoiceOptions = isExam ? (session.choiceOptionsMap[session.currentIndex] ?? []) : [];
-
+  const examChoiceOptions = isExam ? ((session as ExamSession).choiceOptionsMap[session.currentIndex] ?? []) : [];
   const choiceOptions = isExam ? examChoiceOptions : oneByOneChoiceOptions;
 
   // チェックシート
   const renderSheet = () => {
-    if (oneByOnePhase === 'finished') return null;
+    if (!isExam && (session as OneByOneSession).phase === 'finished') return null;
     if (isExam && session.phase === 'reviewing') return null;
 
     return (
@@ -201,146 +121,18 @@ export const QuizSession = ({
     );
   };
 
-  // ── 一問一答: finished ─────────────────────────────────
-  if (!isExam && oneByOnePhase === 'finished') {
-    const s = session as OneByOneSession;
-    const correctCount = s.results.filter(Boolean).length;
-    const totalCount   = s.queue.length;
-    const filtered = session.queue.map((p, i) => ({
-      p,
-      correct:    s.results[i] as boolean | undefined,
-      answered:   i < s.results.length,
-    })).filter(({ p, correct, answered }) => {
-      if (resultFilter === 'correct')    return correct === true;
-      if (resultFilter === 'incorrect')  return answered && correct === false;
-      if (resultFilter === 'bookmarked') return getBookmarked(p.id);
-      return true;
-    });
-
+  // ── 結果画面（一問一答 finished / 試験 reviewing）──────────
+  const oneByOnePhase = !isExam ? (session as OneByOneSession).phase : null;
+  if ((!isExam && oneByOnePhase === 'finished') || (isExam && session.phase === 'reviewing')) {
     return (
-      <div className="pb-6">
-        <div className="text-center py-7">
-          <div className="text-[52px] font-black text-[#1a1a1a] dark:text-[#e0e0e0] leading-none">{correctCount}/{totalCount}</div>
-          <div className="text-[13px] text-[#888] mt-[6px]">正解</div>
-        </div>
-
-        <div className="flex gap-[6px] mb-[14px] flex-wrap">
-          {([['all','すべて'],['correct','✓ 正解'],['incorrect','✗ 不正解'],['bookmarked','★ ブックマーク']] as [ResultFilter, string][]).map(([f, label]) => (
-            <button key={f} className={`qz-filter-btn${resultFilter === f ? ' qz-filter-btn--active' : ''}`} onClick={() => setResultFilter(f)}>
-              {label}
-            </button>
-          ))}
-        </div>
-
-        {filtered.map(({ p, correct, answered }) => {
-          const userAns = s.answers[session.queue.indexOf(p)];
-          const rowCls = !answered ? 'skip' : correct ? 'ok' : 'ng';
-          return (
-          <div key={p.id} className={`qz-result-item qz-result-item--${rowCls}`}>
-            <div className={`qz-result-icon qz-result-icon--${!answered ? 'skip' : correct ? 'ok' : 'ng'}`}>
-              {!answered ? '—' : correct ? '○' : '✗'}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="qz-result-qa">
-                <div className="qz-result-q">
-                  <div className="qz-result-qa-label">問題</div>
-                  <div className={p.imageUrl ? 'qz-result-q-body' : undefined}>
-                    {p.imageUrl && <ImageWithLoader src={p.imageUrl} className="qz-result-img" spinnerClassName="qz-img-spinner--thumb" />}
-                    <div className="qz-result-question">{p.question}</div>
-                  </div>
-                </div>
-                {p.answerFormat !== 'flashcard' && answered && (
-                  <div className="qz-result-a">
-                    <div className="qz-result-qa-label">回答</div>
-                    <div className={`qz-result-answer${correct ? '' : ' qz-result-answer--wrong'}`}>{userAns || '未回答'}</div>
-                    {!correct && <div className="qz-result-userans">正解: {p.answer}</div>}
-                  </div>
-                )}
-                {!answered && p.answerFormat !== 'flashcard' && (
-                  <div className="qz-result-a">
-                    <div className="qz-result-qa-label text-[#bbb]">未回答</div>
-                    <div className="qz-result-userans">正解: {p.answer}</div>
-                  </div>
-                )}
-              </div>
-              {renderMemo(p.id)}
-            </div>
-            <button className="qz-result-bm-btn" onClick={() => onToggleBookmark(p.id)}>
-              {getBookmarked(p.id) ? '★' : '☆'}
-            </button>
-          </div>
-          );
-        })}
-
-        <div className="mt-5 flex gap-2">
-          <Button variant="default" className="flex-1" onClick={onEnd}>問題一覧に戻る</Button>
-        </div>
-      </div>
-    );
-  }
-
-  // ── 試験: reviewing ─────────────────────────────────────
-  if (isExam && session.phase === 'reviewing') {
-    const correctCount = session.queue.filter((p, i) => isAnswerCorrect(session.answers[i] ?? '', p.answer)).length;
-    const elapsed = session.elapsedMs != null ? formatElapsed(session.elapsedMs) : null;
-
-    const filtered = session.queue.map((p, i) => {
-      const userAns = session.answers[i] ?? '';
-      const correct = isAnswerCorrect(userAns, p.answer);
-      return { p, correct, userAns };
-    }).filter(({ p, correct }) => {
-      if (resultFilter === 'correct')    return correct;
-      if (resultFilter === 'incorrect')  return !correct;
-      if (resultFilter === 'bookmarked') return getBookmarked(p.id);
-      return true;
-    });
-
-    return (
-      <div className="pb-6">
-        <div className="text-center py-7">
-          <div className="text-[52px] font-black text-[#1a1a1a] dark:text-[#e0e0e0] leading-none">{correctCount}/{session.queue.length}</div>
-          <div className="text-[13px] text-[#888] mt-[6px]">正解</div>
-        </div>
-        {elapsed && <div className="text-center text-[13px] text-[#888] mb-5">所要時間: {elapsed}</div>}
-
-        <div className="flex gap-[6px] mb-[14px] flex-wrap">
-          {([['all','すべて'],['correct','✓ 正解'],['incorrect','✗ 不正解'],['bookmarked','★ ブックマーク']] as [ResultFilter, string][]).map(([f, label]) => (
-            <button key={f} className={`qz-filter-btn${resultFilter === f ? ' qz-filter-btn--active' : ''}`} onClick={() => setResultFilter(f)}>
-              {label}
-            </button>
-          ))}
-        </div>
-
-        {filtered.map(({ p, correct, userAns }) => (
-          <div key={p.id} className={`qz-result-item qz-result-item--${correct ? 'ok' : 'ng'}`}>
-            <div className={`qz-result-icon qz-result-icon--${correct ? 'ok' : 'ng'}`}>{correct ? '○' : '✗'}</div>
-            <div className="flex-1 min-w-0">
-              <div className="qz-result-qa">
-                <div className="qz-result-q">
-                  <div className="qz-result-qa-label">問題</div>
-                  <div className={p.imageUrl ? 'qz-result-q-body' : undefined}>
-                    {p.imageUrl && <ImageWithLoader src={p.imageUrl} className="qz-result-img" spinnerClassName="qz-img-spinner--thumb" />}
-                    <div className="qz-result-question">{p.question}</div>
-                  </div>
-                </div>
-                <div className="qz-result-a">
-                  <div className="qz-result-qa-label">回答</div>
-                  <div className={`qz-result-answer${correct ? '' : ' qz-result-answer--wrong'}`}>{userAns || '未回答'}</div>
-                  {!correct && <div className="qz-result-userans">正解: {p.answer}</div>}
-                </div>
-              </div>
-              {renderMemo(p.id)}
-            </div>
-            <button className="qz-result-bm-btn" onClick={() => onToggleBookmark(p.id)}>
-              {getBookmarked(p.id) ? '★' : '☆'}
-            </button>
-          </div>
-        ))}
-
-        <div className="mt-5">
-          <Button variant="default" className="w-full" onClick={onEnd}>問題一覧に戻る</Button>
-        </div>
-      </div>
+      <ResultView
+        session={session}
+        problems={problems}
+        onToggleBookmark={onToggleBookmark}
+        onUpdateMemo={onUpdateMemo}
+        onEnd={onEnd}
+        addToast={addToast}
+      />
     );
   }
 
@@ -353,12 +145,13 @@ export const QuizSession = ({
 
   // ── 試験: answering ─────────────────────────────────────
   if (isExam) {
-    const totalQ   = session.queue.length;
-    const answeredCount = session.answers.filter(a => a !== '').length;
-    const isWritten   = method === 'written';
-    const isChoice    = method === 'choice2' || method === 'choice4';
-    const isFlashcard = method === 'flashcard';
-    const canNext     = isFlashcard || isWritten || (isChoice && !!selectedChoice);
+    const s = session as ExamSession;
+    const totalQ        = s.queue.length;
+    const answeredCount = s.answers.filter(a => a !== '').length;
+    const isWritten     = method === 'written';
+    const isChoice      = method === 'choice2' || method === 'choice4';
+    const isFlashcard   = method === 'flashcard';
+    const canNext       = isFlashcard || isWritten || (isChoice && !!selectedChoice);
 
     const handleChoiceClick = (opt: string) => {
       setSelectedChoice(opt);
@@ -375,14 +168,14 @@ export const QuizSession = ({
           <div className="flex gap-2 items-center">
             <span className="text-[13px] text-[#888] font-semibold">{answeredCount}/{totalQ} 回答済み</span>
             <Button variant="default" size="sm" onClick={() => {
-              const unanswered = session.answers.filter(a => a === '').length;
+              const unanswered = s.answers.filter(a => a === '').length;
               if (unanswered > 0) setShowSubmitConfirm(true);
               else onSubmitExam();
             }}>提出する</Button>
           </div>
         </div>
 
-        <Progress value={(session.currentIndex / totalQ) * 100} className="mb-5" />
+        <Progress value={(s.currentIndex / totalQ) * 100} className="mb-5" />
 
         <button
           className={`qz-bookmark-row${bookmarked ? ' qz-bookmark-row--active' : ''}`}
@@ -392,7 +185,7 @@ export const QuizSession = ({
         </button>
 
         <div className="qz-card">
-          <div className="qz-card-label">問 {session.currentIndex + 1}</div>
+          <div className="qz-card-label">問 {s.currentIndex + 1}</div>
           <div className={currentQ.imageUrl ? 'qz-card-body' : undefined}>
             {currentQ.imageUrl && <ImageWithLoader src={currentQ.imageUrl} className="qz-card-img-side" />}
             <div className="qz-card-question">{currentQ.question}</div>
@@ -403,7 +196,7 @@ export const QuizSession = ({
           <textarea
             name="exam-answer"
             className="qz-written-input"
-            value={session.answers[session.currentIndex] ?? ''}
+            value={s.answers[s.currentIndex] ?? ''}
             onChange={e => onExamWrittenInputChange(e.target.value)}
             placeholder="答えを入力（空欄でスキップ）"
           />
@@ -417,7 +210,6 @@ export const QuizSession = ({
                 className={`qz-choice-btn${selectedChoice === opt ? ' qz-choice-btn--selected' : ''}`}
                 onClick={() => handleChoiceClick(opt)}
               >
-
                 {opt}
               </button>
             ))}
@@ -425,29 +217,29 @@ export const QuizSession = ({
         )}
 
         <div className="flex gap-2 items-center">
-          {session.currentIndex > 0 && (
+          {s.currentIndex > 0 && (
             <Button variant="outline" onClick={onExamPrev}>← 前の問題</Button>
           )}
           <Button
             variant="default"
             className="flex-1"
-            onClick={session.currentIndex === totalQ - 1
-            ? () => {
-                const unanswered = session.answers.filter(a => a === '').length;
-                if (unanswered > 0) setShowSubmitConfirm(true);
-                else onSubmitExam();
-              }
-            : onExamNext}
+            onClick={s.currentIndex === totalQ - 1
+              ? () => {
+                  const unanswered = s.answers.filter(a => a === '').length;
+                  if (unanswered > 0) setShowSubmitConfirm(true);
+                  else onSubmitExam();
+                }
+              : onExamNext}
             disabled={!canNext}
           >
-            {session.currentIndex === totalQ - 1 ? '提出する' : '次の問題 →'}
+            {s.currentIndex === totalQ - 1 ? '提出する' : '次の問題 →'}
           </Button>
         </div>
 
         {renderSheet()}
 
         {showSubmitConfirm && (() => {
-          const unansweredNums = session.answers
+          const unansweredNums = s.answers
             .map((a, i) => a === '' ? i + 1 : null)
             .filter((n): n is number => n !== null);
           return (
@@ -497,7 +289,6 @@ export const QuizSession = ({
 
       <Progress value={(progress / totalQ) * 100} className="mb-5" />
 
-      {/* ブックマークボタン（共通） */}
       <button
         className={`qz-bookmark-row${bookmarked ? ' qz-bookmark-row--active' : ''}`}
         onClick={() => onToggleBookmark(currentQ.id)}
@@ -597,8 +388,8 @@ export const QuizSession = ({
             {choiceOptions.map((opt) => {
               let cls = 'qz-choice-btn';
               if (isRevealed) {
-                if (opt === currentQ.answer)                       cls += ' qz-choice-btn--correct';
-                else if (opt === selectedChoice)                   cls += ' qz-choice-btn--incorrect';
+                if (opt === currentQ.answer)    cls += ' qz-choice-btn--correct';
+                else if (opt === selectedChoice) cls += ' qz-choice-btn--incorrect';
               } else if (opt === selectedChoice) {
                 cls += ' qz-choice-btn--selected';
               }
@@ -614,7 +405,6 @@ export const QuizSession = ({
                     }
                   }}
                 >
-  
                   {opt}
                 </button>
               );

@@ -1,5 +1,11 @@
 /// <reference types="@cloudflare/workers-types" />
 
+import { Auth, WorkersKVStoreSingle } from 'firebase-auth-cloudflare-workers';
+import {
+  type ServiceAccount,
+  getAccessToken, firestoreGet, fsValue, parseDoc,
+} from '../../shared/google';
+
 export interface Env {
   ALLOWED_ORIGIN: string;
   FIREBASE_PROJECT_ID: string;
@@ -7,65 +13,8 @@ export interface Env {
   GOOGLE_OAUTH_CLIENT_ID: string;
   GOOGLE_OAUTH_CLIENT_SECRET: string;
   GOOGLE_SERVICE_ACCOUNT: string;
-}
-
-interface ServiceAccount {
-  client_email: string;
-  private_key: string;
-}
-
-// ── JWT / OAuth2 (Firebase service account) ──────────────────────────────────
-
-function base64url(buf: ArrayBuffer): string {
-  const bytes = new Uint8Array(buf);
-  let str = '';
-  for (const b of bytes) str += String.fromCharCode(b);
-  return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-}
-
-function encodeObj(obj: object): string {
-  return btoa(JSON.stringify(obj))
-    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-}
-
-function pemToArrayBuffer(pem: string): ArrayBuffer {
-  const b64 = pem
-    .replace(/-----BEGIN PRIVATE KEY-----/, '')
-    .replace(/-----END PRIVATE KEY-----/, '')
-    .replace(/\s/g, '');
-  const bin = atob(b64);
-  const buf = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
-  return buf.buffer;
-}
-
-async function getFirebaseAccessToken(sa: ServiceAccount): Promise<string> {
-  const now = Math.floor(Date.now() / 1000);
-  const header = encodeObj({ alg: 'RS256', typ: 'JWT' });
-  const payload = encodeObj({
-    iss: sa.client_email,
-    scope: 'https://www.googleapis.com/auth/datastore',
-    aud: 'https://oauth2.googleapis.com/token',
-    exp: now + 3600,
-    iat: now,
-  });
-  const signingInput = `${header}.${payload}`;
-  const key = await crypto.subtle.importKey(
-    'pkcs8',
-    pemToArrayBuffer(sa.private_key),
-    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
-    false,
-    ['sign'],
-  );
-  const sig = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(signingInput));
-  const jwt = `${signingInput}.${base64url(sig)}`;
-  const resp = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
-  });
-  const data = await resp.json() as { access_token: string };
-  return data.access_token;
+  NONCE_KV: KVNamespace;
+  PUBLIC_JWK_CACHE_KV: KVNamespace;
 }
 
 // ── Firestore REST ────────────────────────────────────────────────────────────
@@ -83,35 +32,13 @@ function toFsValue(v: unknown): FsFieldValue {
   return { nullValue: null };
 }
 
-function fsValue(v: Record<string, unknown>): unknown {
-  if ('stringValue' in v) return v.stringValue;
-  if ('integerValue' in v) return Number(v.integerValue);
-  if ('booleanValue' in v) return v.booleanValue;
-  return null;
-}
-
-function parseDoc(doc: Record<string, unknown>): Record<string, unknown> {
-  const fields = (doc.fields as Record<string, Record<string, unknown>>) ?? {};
-  return Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, fsValue(v)]));
-}
-
-async function firestoreGet(
-  projectId: string,
-  token: string,
-  path: string,
-): Promise<Record<string, unknown> | null> {
-  const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/${path}`;
-  const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-  if (!resp.ok) return null;
-  return resp.json() as Promise<Record<string, unknown>>;
-}
-
+// firestoreGet と統一: エラー時は false を返し、例外を throw しない
 async function firestoreSet(
   projectId: string,
   token: string,
   path: string,
   data: Record<string, unknown>,
-): Promise<void> {
+): Promise<boolean> {
   const fields: Record<string, FsFieldValue> = {};
   for (const [k, v] of Object.entries(data)) {
     fields[k] = toFsValue(v);
@@ -122,24 +49,31 @@ async function firestoreSet(
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ fields }),
   });
-  if (!resp.ok) throw new Error(`Firestore write failed: ${resp.status}`);
+  if (!resp.ok) {
+    console.error(`Firestore write failed: ${resp.status}`);
+    return false;
+  }
+  return true;
 }
 
 // ── Firebase ID token 検証 ────────────────────────────────────────────────────
 
-/** Firebase ID トークンを検証し、有効なら uid を返す */
-async function verifyIdToken(idToken: string, webApiKey: string): Promise<string | null> {
-  const resp = await fetch(
-    `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${webApiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ idToken }),
-    },
-  );
-  if (!resp.ok) return null;
-  const data = await resp.json() as { users?: { localId: string }[] };
-  return data.users?.[0]?.localId ?? null;
+/** Firebase ID トークンを署名検証し、有効なら uid を返す */
+async function verifyIdToken(
+  idToken: string,
+  projectId: string,
+  jwkKv: KVNamespace,
+): Promise<string | null> {
+  try {
+    const auth = Auth.getOrInitialize(
+      projectId,
+      WorkersKVStoreSingle.getOrInitialize(jwkKv),
+    );
+    const token = await auth.verifyIdToken(idToken, false);
+    return token.uid;
+  } catch {
+    return null;
+  }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -152,11 +86,12 @@ function matchesOrigin(requestOrigin: string, allowed: string): boolean {
   return requestOrigin === allowed;
 }
 
+// Origin がない場合（curl など）は空オブジェクトを返す。
+// ホワイトリスト外の Origin は allowedOrigins[0] をフォールバックとして返す（既存動作を維持）。
 function corsHeaders(requestOrigin: string | null, allowedOrigins: string[]): Record<string, string> {
-  const matched = requestOrigin
-    ? allowedOrigins.find(a => matchesOrigin(requestOrigin, a))
-    : undefined;
-  const origin = matched ? requestOrigin! : allowedOrigins[0];
+  if (!requestOrigin) return {};
+  const matched = allowedOrigins.find(a => matchesOrigin(requestOrigin, a));
+  const origin = matched ? requestOrigin : allowedOrigins[0];
   return {
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -178,18 +113,73 @@ function jsonError(cors: Record<string, string>, msg: string, status: number): R
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
+// nonce → { uid, accessToken } のマッピングを NONCE_KV に保存する TTL（秒）
+const NONCE_TTL_SECONDS = 300;
+
+/**
+ * POST /nonce: idToken を検証し、短命 nonce を発行する。
+ * フロントエンドはこの nonce を /stream/{fileId}?token=nonce に使用する。
+ * nonce は NONCE_KV に 300 秒間保存される（ログにアクセストークンが残らないようにするため）。
+ */
+async function handleNonce(
+  request: Request,
+  env: Env,
+  cors: Record<string, string>,
+): Promise<Response> {
+  let uid: string, idToken: string, accessToken: string;
+  try {
+    const body = await request.json() as { uid?: string; idToken?: string; accessToken?: string };
+    uid = body.uid ?? '';
+    idToken = body.idToken ?? '';
+    accessToken = body.accessToken ?? '';
+  } catch {
+    return jsonError(cors, 'Invalid JSON', 400);
+  }
+  if (!uid || !idToken || !accessToken) return jsonError(cors, 'Missing required fields', 400);
+
+  const verifiedUid = await verifyIdToken(idToken, env.FIREBASE_PROJECT_ID, env.PUBLIC_JWK_CACHE_KV);
+  if (!verifiedUid || verifiedUid !== uid) return jsonError(cors, 'Unauthorized', 401);
+
+  // UUID v4 を nonce として生成
+  const nonceBytes = crypto.getRandomValues(new Uint8Array(16));
+  nonceBytes[6] = (nonceBytes[6] & 0x0f) | 0x40;
+  nonceBytes[8] = (nonceBytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(nonceBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+  const nonce = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+
+  await env.NONCE_KV.put(nonce, JSON.stringify({ uid, accessToken }), {
+    expirationTtl: NONCE_TTL_SECONDS,
+  });
+
+  return json(cors, { nonce });
+}
+
 async function handleStream(
   request: Request,
+  env: Env,
   cors: Record<string, string>,
   fileId: string,
 ): Promise<Response> {
   const url = new URL(request.url);
-  const token = url.searchParams.get('token');
-  if (!token) return jsonError(cors, 'Unauthorized', 401);
+  const nonce = url.searchParams.get('token');
+  if (!nonce) return jsonError(cors, 'Unauthorized', 401);
+
+  // NONCE_KV から nonce を検証してアクセストークンを取得
+  const nonceData = await env.NONCE_KV.get(nonce);
+  if (!nonceData) return jsonError(cors, 'Unauthorized', 401);
+
+  let accessToken: string;
+  try {
+    const parsed = JSON.parse(nonceData) as { uid?: string; accessToken?: string };
+    if (!parsed.accessToken) return jsonError(cors, 'Unauthorized', 401);
+    accessToken = parsed.accessToken;
+  } catch {
+    return jsonError(cors, 'Unauthorized', 401);
+  }
 
   const driveUrl = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&acknowledgeAbuse=true&supportsAllDrives=true`;
   const headers: Record<string, string> = {
-    Authorization: `Bearer ${token}`,
+    Authorization: `Bearer ${accessToken}`,
     Accept: 'video/*,application/octet-stream',
   };
   const range = request.headers.get('Range');
@@ -231,7 +221,7 @@ async function handleExchange(
   }
   if (!code || !uid || !idToken) return jsonError(cors, 'Missing required fields', 400);
 
-  const verifiedUid = await verifyIdToken(idToken, env.FIREBASE_WEB_API_KEY);
+  const verifiedUid = await verifyIdToken(idToken, env.FIREBASE_PROJECT_ID, env.PUBLIC_JWK_CACHE_KV);
   if (!verifiedUid || verifiedUid !== uid) return jsonError(cors, 'Unauthorized', 401);
 
   const tokenResp = await fetch('https://oauth2.googleapis.com/token', {
@@ -263,12 +253,13 @@ async function handleExchange(
   }
 
   const sa: ServiceAccount = JSON.parse(env.GOOGLE_SERVICE_ACCOUNT);
-  const firebaseToken = await getFirebaseAccessToken(sa);
-  await firestoreSet(env.FIREBASE_PROJECT_ID, firebaseToken, `users/${uid}/videocollect/auth`, {
+  const firebaseToken = await getAccessToken(sa, ['https://www.googleapis.com/auth/datastore']);
+  const ok = await firestoreSet(env.FIREBASE_PROJECT_ID, firebaseToken, `users/${uid}/videocollect/auth`, {
     accessToken: tokens.access_token,
     refreshToken: tokens.refresh_token,
     tokenExpiry: Date.now() + tokens.expires_in * 1000,
   });
+  if (!ok) return jsonError(cors, 'Internal Server Error', 500);
 
   return json(cors, { success: true });
 }
@@ -288,11 +279,11 @@ async function handleRefresh(
   }
   if (!uid || !idToken) return jsonError(cors, 'Missing required fields', 400);
 
-  const verifiedUid = await verifyIdToken(idToken, env.FIREBASE_WEB_API_KEY);
+  const verifiedUid = await verifyIdToken(idToken, env.FIREBASE_PROJECT_ID, env.PUBLIC_JWK_CACHE_KV);
   if (!verifiedUid || verifiedUid !== uid) return jsonError(cors, 'Unauthorized', 401);
 
   const sa: ServiceAccount = JSON.parse(env.GOOGLE_SERVICE_ACCOUNT);
-  const firebaseToken = await getFirebaseAccessToken(sa);
+  const firebaseToken = await getAccessToken(sa, ['https://www.googleapis.com/auth/datastore']);
   const authDoc = await firestoreGet(env.FIREBASE_PROJECT_ID, firebaseToken, `users/${uid}/videocollect/auth`);
   if (!authDoc) return jsonError(cors, 'Not connected', 401);
 
@@ -322,11 +313,12 @@ async function handleRefresh(
   };
   const tokenExpiry = Date.now() + tokens.expires_in * 1000;
 
-  await firestoreSet(env.FIREBASE_PROJECT_ID, firebaseToken, `users/${uid}/videocollect/auth`, {
+  const ok = await firestoreSet(env.FIREBASE_PROJECT_ID, firebaseToken, `users/${uid}/videocollect/auth`, {
     accessToken: tokens.access_token,
     refreshToken,
     tokenExpiry,
   });
+  if (!ok) return jsonError(cors, 'Internal Server Error', 500);
 
   return json(cors, { accessToken: tokens.access_token, tokenExpiry });
 }
@@ -347,7 +339,11 @@ export default {
 
       const streamMatch = url.pathname.match(/^\/stream\/([^/]+)$/);
       if (streamMatch && request.method === 'GET') {
-        return handleStream(request, cors, streamMatch[1]);
+        return handleStream(request, env, cors, streamMatch[1]);
+      }
+
+      if (url.pathname === '/nonce' && request.method === 'POST') {
+        return handleNonce(request, env, cors);
       }
 
       if (url.pathname === '/oauth/exchange' && request.method === 'POST') {

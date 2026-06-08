@@ -44,11 +44,15 @@ useLayoutEffect (マウント時):
 
 useEffect (currentUser が確定したとき):
   currentUser === null → 早期 return（取得しない）
+  cancelled = false を設定
   getDoc(doc(db, path))
-  → exists: parse(data) → setData → onAfterLoad?.(parsed)
-  → エラー: console.error + setDbError(true)
-  → finally: setLoading(false) + setGlobalLoading(loadingKey, false)
+  → exists: if (!cancelled) { parse(data) → setData → onAfterLoad?.(parsed) }
+  → エラー: if (!cancelled) { console.error + setDbError(true) }
+  → finally: if (!cancelled) { setLoading(false) + setGlobalLoading(loadingKey, false) }
+  → クリーンアップ: cancelled = true（アンマウント後の setState を防ぐ）
 ```
+
+`onAfterLoad` は `useRef` 経由で保持し、毎レンダーの参照変化を依存配列に含めずに吸収する。
 
 ### 使用例
 
@@ -93,11 +97,13 @@ function useFirestoreSave<T>(opts: Options): (data: T) => void
   currentUser === null → 何もしない
   前回のタイマーがあれば clearTimeout で置き換え
   debounceMs 経過後: setDoc(doc(db, path), data, { merge: true })
-  → 成功: onSuccess?.()
+  → 成功: if (mountedRef.current) { onSuccess?.() }
   → 失敗: console.error（サイレント無視。次回操作時に再試行される）
 ```
 
 - `onSuccess` は `useRef` 経由で保持し、毎レンダーの参照変化を吸収する
+- `mountedRef` によりアンマウント後に `onSuccess` が呼ばれない（setState を含む場合に安全）
+- データ損失防止のためアンマウント後も `setDoc` 自体は実行される（タイマーは cancel しない）
 
 ### 使用例
 
@@ -141,3 +147,4 @@ const saveToFirestore = useFirestoreSave<TimetableData>({
 | debounce 中に連続呼び出しすると最後の呼び出しのみ保存される | ✅ |
 | 保存成功後に onSuccess が呼ばれる | ✅ |
 | setDoc が失敗しても onSuccess は呼ばれない（console.error のみ） | ✅ |
+| アンマウント後に onSuccess は呼ばれない | ✅ |

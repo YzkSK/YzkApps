@@ -168,4 +168,28 @@ describe('ThemeContext (結合テスト)', () => {
 
     expect(mockSetDoc).not.toHaveBeenCalled();
   });
+
+  it('setDoc が失敗しても darkMode は切り替わる（console.error のみ）', async () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    mockUseAuth.mockReturnValue({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      currentUser: { uid: 'u1' } as any,
+      username: 'user',
+      loading: false,
+    });
+    mockGetDoc.mockResolvedValue({ exists: () => false });
+    mockSetDoc.mockRejectedValue(new Error('Firestore error'));
+
+    renderTheme();
+
+    await act(async () => {
+      screen.getByRole('button').click();
+    });
+
+    // setDoc エラーでも UI は変化している
+    expect(screen.getByTestId('darkMode').textContent).toBe('true');
+    expect(localStorage.getItem('tt-dark-mode')).toBe('true');
+    expect(consoleSpy).toHaveBeenCalled();
+    consoleSpy.mockRestore();
+  });
 });

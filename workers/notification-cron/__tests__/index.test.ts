@@ -224,3 +224,22 @@ describe('nowMinJst', () => {
     expect(nowMinJst()).toBe(539); // 8 * 60 + 59
   });
 });
+
+// ── scheduled ハンドラーの安全性 ─────────────────────────────────
+describe('scheduled handler (クラッシュ安全性)', () => {
+  it('GOOGLE_SERVICE_ACCOUNT が不正 JSON でも例外がスローされない', async () => {
+    // scheduled をデフォルトエクスポートから取得して呼び出す
+    const mod = await import('../src/index');
+    const handler = (mod as unknown as { default: { scheduled: (e: unknown, env: unknown) => Promise<void> } }).default;
+
+    const env = {
+      GOOGLE_SERVICE_ACCOUNT: 'INVALID_JSON',
+      FIREBASE_PROJECT_ID: 'test-project',
+    };
+
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(handler.scheduled({} as unknown, env)).resolves.toBeUndefined();
+    expect(consoleSpy).toHaveBeenCalled();
+    consoleSpy.mockRestore();
+  });
+});

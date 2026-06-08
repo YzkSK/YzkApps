@@ -6,8 +6,8 @@
 |---|---|---|---|
 | 単体テスト | 13 | - | ✅ 全件パス |
 | 結合テスト | 16 | - | ✅ 全件パス |
-| Worker 単体テスト | 1 | 26 | ✅ 全件パス |
-| **合計** | **31** | **291** | ✅ |
+| Worker 単体テスト | 1 | 27 | ✅ 全件パス |
+| **合計** | **31** | **295** | ✅ |
 
 テストコマンド: ルート `npm test`、Worker `cd workers/notification-cron && npm test`
 
@@ -32,4 +32,5 @@
 | [videocollect.md](videocollect.md) | `/app/videocollect/play` | 動画プレイヤー |
 | [error-pages.md](error-pages.md) | - | エラーページ (404/403/500/503) |
 | [hooks.md](hooks.md) | - | 共有 Hooks (useFirestoreData / useFirestoreSave) |
+| [error-codes.md](error-codes.md) | - | プロジェクト全体エラーコード一覧 (E001〜) |
 | [app-development-guide.md](app-development-guide.md) | - | アプリ追加手順・最低テスト基準 |

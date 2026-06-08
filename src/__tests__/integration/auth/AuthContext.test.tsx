@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, waitFor, cleanup } from '@testing-library/react';
+import { render, screen, waitFor, cleanup, act } from '@testing-library/react';
 import { AuthProvider, useAuth } from '@/app/auth/AuthContext';
 import { AppLoadingProvider } from '@/app/shared/AppLoadingContext';
 
@@ -122,5 +122,41 @@ describe('AuthContext (結合テスト)', () => {
     unmount();
 
     expect(unsubscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it('ユーザー切り替え時のレースコンディション: 古いコールバックの getDoc 結果が新しいユーザーの username を上書きしない', async () => {
+    let capturedCb: ((u: { uid: string } | null) => void) | null = null;
+    mockOnAuthStateChanged.mockImplementation((_: unknown, cb: (u: { uid: string } | null) => void) => {
+      capturedCb = cb;
+      return () => {};
+    });
+
+    // user-A の getDoc は遅延して解決する
+    let resolveUserA!: (v: unknown) => void;
+    const slowPromise = new Promise(res => { resolveUserA = res; });
+
+    mockGetDoc
+      .mockReturnValueOnce(slowPromise)  // user-A の呼び出し（遅延）
+      .mockResolvedValueOnce({ exists: () => true, data: () => ({ username: 'user-b' }) });
+
+    renderAuth();
+
+    // user-A でログイン → getDoc が開始される（まだ完了しない）
+    await act(async () => { capturedCb!({ uid: 'user-A' }); });
+
+    // user-B に切り替わる → user-B の getDoc がすぐに解決
+    await act(async () => { capturedCb!({ uid: 'user-B' }); });
+
+    await waitFor(() =>
+      expect(screen.getByTestId('username').textContent).toBe('user-b'),
+    );
+
+    // 遅れていた user-A の getDoc が今頃解決しても username は変わらない
+    await act(async () => {
+      resolveUserA({ exists: () => true, data: () => ({ username: 'user-a' }) });
+    });
+
+    // user-B の username のまま維持されていること
+    expect(screen.getByTestId('username').textContent).toBe('user-b');
   });
 });

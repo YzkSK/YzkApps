@@ -2,8 +2,11 @@
   "name": "drive-proxy",
   "version": "1.0.0",
   "type": "module",
+  "dependencies": {
+    "firebase-auth-cloudflare-workers": "^2.0.3"
+  },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240725.0",
-    "wrangler": "^3.0.0"
+    "wrangler": "^4.98.0"
   }
 }

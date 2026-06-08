@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useToast } from '../shared/useToast';
 import { signOut } from 'firebase/auth';
-import { ref, deleteObject, listAll } from 'firebase/storage';
+import { ref, deleteObject } from 'firebase/storage';
 import { auth, storage } from '../shared/firebase';
 import { useAuth } from '../auth/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -15,6 +15,8 @@ import {
 } from './constants';
 import { useFirestoreData } from '../shared/useFirestoreData';
 import { useFirestoreSave } from '../shared/useFirestoreSave';
+import { useDragSet } from './useDragSet';
+import { useImageCleanup } from './useImageCleanup';
 import { ProblemList } from './views/ProblemList';
 import { ProblemModal } from './modals/ProblemModal';
 import { ProblemSetModal } from './modals/ProblemSetModal';
@@ -33,20 +35,8 @@ export const Quiz = () => {
 
   const [activeSetId, setActiveSetId] = useState<string | null>(null);
   const [modal, setModal]             = useState<Modal>(null);
-  const [dragSetId, setDragSetId]         = useState<string | null>(null);
-  const [dragOverSetId, setDragOverSetId] = useState<string | null>(null);
-  const [setPointerPos, setSetPointerPos] = useState<{ x: number; y: number } | null>(null);
-  const didDragSetRef        = useRef(false);
-  const dragSetIdRef         = useRef<string | null>(null);   // stale-closure 回避
-  const dragOverSetIdRef     = useRef<string | null>(null);   // stale-closure 回避
-  const prevDragOverSetIdRef = useRef<string | null>(null);
-  const setSlotHeightRef     = useRef(80);
-  const setCardWidthRef      = useRef(0);
-  const setCardLeftRef       = useRef(0);
-  const setGrabOffsetRef     = useRef(0);
   const { toasts, addToast }          = useToast(TOAST_DURATION_MS);
   const [formError, setFormError]     = useState('');
-  const setsRef = useRef<ProblemSet[]>([]);
 
   // saveToFirestore を先に定義して onAfterLoad から参照できるようにする
   const saveToFirestore = useFirestoreSave<{ sets: ProblemSet[] }>({
@@ -88,7 +78,18 @@ export const Quiz = () => {
     },
   });
 
-  useEffect(() => { setsRef.current = sets; }, [sets]);
+  const cleanupImages = useImageCleanup(sets, currentUser);
+
+  const {
+    dragSetId, setPointerPos,
+    didDragSetRef, setCardWidthRef, setCardLeftRef, setGrabOffsetRef,
+    getSetShift, startSetDrag, endSetDrag, cancelSetDrag,
+    updateDragOverSet, updateDragPointerPos, getSetItemIdFromPoint,
+  } = useDragSet(sets, (orderedIds) => {
+    const next = orderedIds.map(id => sets.find(s => s.id === id)!).filter(Boolean);
+    setSets(next);
+    saveToFirestore({ sets: next });
+  });
 
   // ローディング完了後、保存済みGeminiセッションがあれば自動復元
   useEffect(() => {
@@ -106,31 +107,6 @@ export const Quiz = () => {
       localStorage.removeItem(`gemini-session-${currentUser.uid}`);
     }
   }, [loading, currentUser]);
-
-  const cleanupImages = useCallback(async (guardUrl: string) => {
-    if (!currentUser) return;
-    // Firebase 自身の ref() でパスを取得（自前の URL パースより確実）
-    const toPath = (url: string): string | null => {
-      try { return ref(storage, url).fullPath; } catch { return null; }
-    };
-    const usedPaths = new Set(
-      setsRef.current
-        .flatMap(s => s.problems)
-        .map(p => p.imageUrl ? toPath(p.imageUrl) : null)
-        .filter((p): p is string => p !== null),
-    );
-    // setsRef が古い場合でも guardUrl のファイルは絶対に削除しない
-    const guardPath = toPath(guardUrl);
-    if (guardPath) usedPaths.add(guardPath);
-    try {
-      const { items } = await listAll(ref(storage, `quiz-images/${currentUser.uid}`));
-      await Promise.all(
-        items
-          .filter(item => !usedPaths.has(item.fullPath))
-          .map(item => deleteObject(item).catch((e) => { console.error('Storage個別削除失敗:', e); })),
-      );
-    } catch (e) { console.error('ストレージクリーンアップ失敗:', e); /* 画像クリーンアップは補助的処理のため失敗しても続行 */ }
-  }, [currentUser]);
 
   const handleLogout = async () => {
     await signOut(auth);
@@ -214,72 +190,6 @@ export const Quiz = () => {
   const handleReorder = (orderedIds: string[]) => {
     const reordered = orderedIds.map(id => problems.find(p => p.id === id)!).filter(Boolean);
     updateActiveSetProblems(reordered.map((p, i) => ({ ...p, index: i + 1 })));
-  };
-
-  const handleReorderSets = (orderedIds: string[]) => {
-    const next = orderedIds.map(id => sets.find(s => s.id === id)!).filter(Boolean);
-    setSets(next);
-    saveToFirestore({ sets: next });
-  };
-
-  const dragFromSetIdx = dragSetId     ? sets.findIndex(s => s.id === dragSetId)     : -1;
-  const dragToSetIdx   = dragOverSetId ? sets.findIndex(s => s.id === dragOverSetId) : -1;
-  const getSetShift = (i: number): number => {
-    if (dragFromSetIdx === -1 || dragToSetIdx === -1 || dragFromSetIdx === dragToSetIdx) return 0;
-    const sp = setSlotHeightRef.current;
-    if (dragFromSetIdx < dragToSetIdx && i > dragFromSetIdx && i <= dragToSetIdx) return -sp;
-    if (dragFromSetIdx > dragToSetIdx && i >= dragToSetIdx && i < dragFromSetIdx) return  sp;
-    return 0;
-  };
-  const updateDragOverSet = (id: string | null) => {
-    if (id === null) return;
-    if (id !== prevDragOverSetIdRef.current) navigator.vibrate?.(30);
-    prevDragOverSetIdRef.current = id;
-    dragOverSetIdRef.current = id;
-    setDragOverSetId(id);
-  };
-  const clearDragOverSet = () => {
-    prevDragOverSetIdRef.current = null;
-    dragOverSetIdRef.current = null;
-    setDragOverSetId(null);
-  };
-
-  const getSetItemIdFromPoint = (x: number, y: number): string | null => {
-    const el = document.elementFromPoint(x, y);
-    return (el?.closest('[data-item-id]') as HTMLElement | null)?.dataset.itemId ?? null;
-  };
-
-  const startSetDrag = (id: string, clientX: number, clientY: number, cardEl: HTMLElement | null) => {
-    if (cardEl) {
-      const rect = cardEl.getBoundingClientRect();
-      if (rect.height > 0) setSlotHeightRef.current = rect.height + 10;
-      setCardWidthRef.current = rect.width;
-      setCardLeftRef.current  = rect.left;
-      setGrabOffsetRef.current = clientY - rect.top;
-    }
-    dragSetIdRef.current = id;
-    setDragSetId(id);
-    setSetPointerPos({ x: clientX, y: clientY });
-    didDragSetRef.current = false;
-  };
-
-  const endSetDrag = (clientX: number, clientY: number) => {
-    const toId = getSetItemIdFromPoint(clientX, clientY) ?? dragOverSetIdRef.current;
-    if (toId && toId !== dragSetIdRef.current && dragSetIdRef.current) {
-      didDragSetRef.current = true;
-      const next = [...sets];
-      const fromIdx = next.findIndex(x => x.id === dragSetIdRef.current);
-      const toIdx   = next.findIndex(x => x.id === toId);
-      if (fromIdx !== -1 && toIdx !== -1 && fromIdx !== toIdx) {
-        const [moved] = next.splice(fromIdx, 1);
-        next.splice(toIdx, 0, moved!);
-        handleReorderSets(next.map(x => x.id));
-      }
-    }
-    dragSetIdRef.current = null;
-    setDragSetId(null);
-    setSetPointerPos(null);
-    clearDragOverSet();
   };
 
   const openAdd  = () => { setFormError(''); setModal({ type: 'add' }); };
@@ -413,10 +323,10 @@ export const Quiz = () => {
               </p>
             ) : (
               sets.map((s, i) => {
-                const invalidCount   = getInvalidCount(s.problems);
-                const isDragging = dragSetId === s.id;
-                const shift      = getSetShift(i);
-                const isGrabbing = isDragging && !!setPointerPos;
+                const invalidCount = getInvalidCount(s.problems);
+                const isDragging   = dragSetId === s.id;
+                const shift        = getSetShift(i);
+                const isGrabbing   = isDragging && !!setPointerPos;
                 return (
                 <div
                   key={s.id}
@@ -433,9 +343,8 @@ export const Quiz = () => {
                       e.preventDefault();
                       startSetDrag(s.id, e.clientX, e.clientY, e.currentTarget.parentElement);
                       const onMove = (me: MouseEvent) => {
-                        setSetPointerPos({ x: me.clientX, y: me.clientY });
-                        const overId = getSetItemIdFromPoint(me.clientX, me.clientY);
-                        if (overId && overId !== dragSetIdRef.current) updateDragOverSet(overId);
+                        updateDragPointerPos(me.clientX, me.clientY);
+                        updateDragOverSet(getSetItemIdFromPoint(me.clientX, me.clientY));
                       };
                       const onUp = (me: MouseEvent) => {
                         endSetDrag(me.clientX, me.clientY);
@@ -459,15 +368,14 @@ export const Quiz = () => {
                       e.preventDefault();
                       const touch = e.touches[0];
                       if (!touch) return;
-                      setSetPointerPos({ x: touch.clientX, y: touch.clientY });
-                      const overId = getSetItemIdFromPoint(touch.clientX, touch.clientY);
-                      if (overId && overId !== dragSetIdRef.current) updateDragOverSet(overId);
+                      updateDragPointerPos(touch.clientX, touch.clientY);
+                      updateDragOverSet(getSetItemIdFromPoint(touch.clientX, touch.clientY));
                     }}
                     onTouchEnd={e => {
                       e.preventDefault();
                       const touch = e.changedTouches[0];
                       if (touch) endSetDrag(touch.clientX, touch.clientY);
-                      else { dragSetIdRef.current = null; setDragSetId(null); setSetPointerPos(null); clearDragOverSet(); }
+                      else cancelSetDrag();
                     }}
                   >
                     <span className="text-[16px] text-[#ccc] select-none">⠿</span>

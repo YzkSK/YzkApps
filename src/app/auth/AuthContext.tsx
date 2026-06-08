@@ -24,22 +24,35 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const setGlobalLoading = useSetLoading();
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+    // ユーザー切り替え時に古い getDoc の結果が新しいユーザーを上書きしないよう
+    // callbackId で最新のコールバックのみ state を更新する
+    let latestCallbackId = 0;
+
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      const callbackId = ++latestCallbackId;
       setCurrentUser(user);
-      try {
-        if (user) {
-          const snap = await getDoc(doc(db, 'users', user.uid, 'profile', 'data'));
-          setUsername(snap.exists() ? (snap.data().username as string) : null);
-        } else {
+
+      (async () => {
+        try {
+          if (user) {
+            const snap = await getDoc(doc(db, 'users', user.uid, 'profile', 'data'));
+            if (callbackId !== latestCallbackId) return;
+            setUsername(snap.exists() ? (snap.data().username as string) : null);
+          } else {
+            if (callbackId !== latestCallbackId) return;
+            setUsername(null);
+          }
+        } catch (e) {
+          if (callbackId !== latestCallbackId) return;
+          console.error('AuthContext: プロフィール取得失敗', e);
           setUsername(null);
+        } finally {
+          if (callbackId === latestCallbackId) {
+            setLoading(false);
+            setGlobalLoading('auth', false);
+          }
         }
-      } catch (e) {
-        console.error('AuthContext: プロフィール取得失敗', e);
-        setUsername(null);
-      } finally {
-        setLoading(false);
-        setGlobalLoading('auth', false);
-      }
+      })();
     });
     return unsubscribe;
   }, [setGlobalLoading]);

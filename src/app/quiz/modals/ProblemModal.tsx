@@ -44,7 +44,10 @@ const resizeToBlob = (file: File): Promise<Blob> =>
       canvas.getContext('2d')!.drawImage(img, 0, 0, w, h);
       canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/png');
     };
-    img.onerror = reject;
+    img.onerror = (e) => {
+      URL.revokeObjectURL(url); // onerror 時も revoke してメモリリークを防ぐ
+      reject(e instanceof Error ? e : new Error('Image load failed'));
+    };
     img.src = url;
   });
 
@@ -84,19 +87,24 @@ export const ProblemModal = ({ modal, problems, allProblems, answerFormat, uid, 
         while (wc.length < needed) wc.push('');
         setWrongChoices(wc.slice(0, needed));
         if (p.imageUrl) {
+          let cancelled = false;
           getCachedImageUrl(p.imageUrl).then(url => {
+            if (cancelled) return;
             setExistingImageUrl(p.imageUrl ?? '');
             setImagePreview(url);
           }).catch(() => {
+            if (cancelled) return;
             setExistingImageUrl(p.imageUrl ?? '');
             setImagePreview(p.imageUrl ?? '');
           });
+          return () => { cancelled = true; };
         }
       }
     } else {
       setWrongChoices(Array(needed).fill(''));
     }
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modal.type, modal.type === 'edit' ? modal.problemId : '']);
 
   const generateMemoFromAI = async () => {
     setGeneratingMemo(true);
@@ -131,11 +139,25 @@ export const ProblemModal = ({ modal, problems, allProblems, answerFormat, uid, 
   };
 
   const handleRemoveImage = () => {
+    // ローカルファイルから作成した blob URL のみ revoke する
+    if (imageFile && imagePreview.startsWith('blob:')) {
+      URL.revokeObjectURL(imagePreview);
+    }
     setImageFile(null);
     setImagePreview('');
     setImageRemoved(true);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
+
+  // アンマウント時に blob URL を revoke してメモリリークを防ぐ
+  useEffect(() => {
+    return () => {
+      if (imageFile && imagePreview.startsWith('blob:')) {
+        URL.revokeObjectURL(imagePreview);
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSave = async () => {
     let imageUrl = existingImageUrl;
