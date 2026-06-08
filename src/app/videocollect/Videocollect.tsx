@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
 import { Link } from 'react-router-dom';
 import { db } from '../shared/firebase';
@@ -24,6 +24,9 @@ import {
   fetchAllDriveFiles,
   loadAccessToken,
   buildVideoQuery,
+  getCachedAccessToken,
+  getCachedFileList,
+  cacheFileList,
   renameFile,
   trashFile,
 } from './constants';
@@ -94,15 +97,20 @@ export const Videocollect = () => {
 
   useEffect(() => {
     if (!currentUser) return;
+
+    // キャッシュがあれば即座にアクセストークンをセット（Firestore 読み込みを待たない）
+    const cached = getCachedAccessToken(currentUser.uid);
+    if (cached) setAccessToken(cached.token);
+
     getDoc(doc(db, firestorePaths.vcAuth(currentUser.uid)))
       .then(snap => {
         if (!snap.exists()) {
-          setPageState({ status: 'unauthenticated' });
+          if (!cached) setPageState({ status: 'unauthenticated' });
           return null;
         }
         const auth = snap.data() as VcAuth;
         if (!auth.refreshToken) {
-          setPageState({ status: 'unauthenticated' });
+          if (!cached) setPageState({ status: 'unauthenticated' });
           return null;
         }
         return currentUser.getIdToken().then(idToken => loadAccessToken(currentUser.uid, auth, idToken));
@@ -110,35 +118,52 @@ export const Videocollect = () => {
       .then(token => {
         if (token === null) return;
         if (!token) {
-          addToast(`Drive に接続できませんでした [${VC_ERROR_CODES.TOKEN_REFRESH}]`, 'error');
-          setPageState({ status: 'unauthenticated' });
+          if (!cached) {
+            addToast(`Drive に接続できませんでした [${VC_ERROR_CODES.TOKEN_REFRESH}]`, 'error');
+            setPageState({ status: 'unauthenticated' });
+          }
           return;
         }
-        setAccessToken(token);
+        // トークンがリフレッシュされた場合のみ更新
+        if (token !== cached?.token) setAccessToken(token);
       })
       .catch(e => {
         console.error('VcAuth 読み込みエラー:', e);
-        setPageState({ status: 'error' });
+        if (!cached) setPageState({ status: 'error' });
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser]);
 
-  const fetchFiles = useCallback(async (token: string, folders: DriveFolder[]) => {
-    setPageState({ status: 'loading' });
+  const fetchFiles = useCallback(async (token: string, folders: DriveFolder[], silent = false) => {
+    if (!silent) setPageState({ status: 'loading' });
     try {
       const files = await fetchAllDriveFiles(token, buildVideoQuery(folders));
+      if (currentUser) cacheFileList(currentUser.uid, folders, files);
       setPageState(files.length > 0 ? { status: 'loaded', files } : { status: 'empty' });
     } catch (e) {
       console.error('ファイル取得エラー:', e);
-      addToast(`動画一覧の取得に失敗しました [${VC_ERROR_CODES.FILES_FETCH}]`, 'error');
-      setPageState({ status: 'error' });
+      if (!silent) {
+        addToast(`動画一覧の取得に失敗しました [${VC_ERROR_CODES.FILES_FETCH}]`, 'error');
+        setPageState({ status: 'error' });
+      }
     }
-  }, [addToast]);
+  }, [addToast, currentUser]);
+
+  const hasInitializedRef = useRef(false);
 
   // VcData のロード完了 + accessToken の両方が揃ったら一覧取得
   useEffect(() => {
-    if (!accessToken || loading) return;
-    fetchFiles(accessToken, data.folders);
+    if (!accessToken || loading || hasInitializedRef.current) return;
+    hasInitializedRef.current = true;
+
+    const cachedFiles = currentUser ? getCachedFileList(currentUser.uid, data.folders) : null;
+    if (cachedFiles) {
+      // キャッシュを即座に表示し、バックグラウンドで最新データを取得
+      setPageState(cachedFiles.length > 0 ? { status: 'loaded', files: cachedFiles } : { status: 'empty' });
+      fetchFiles(accessToken, data.folders, true);
+    } else {
+      fetchFiles(accessToken, data.folders);
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accessToken, loading]);
 

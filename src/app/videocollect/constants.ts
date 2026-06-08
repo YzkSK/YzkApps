@@ -29,6 +29,63 @@ export type VcAuth = {
 
 export const VC_INITIAL_DATA: VcData = { folders: [], tags: {} };
 
+// ── アクセストークン localStorage キャッシュ ────────────────────────────────
+
+const vcTokenCacheKey = (uid: string) => `vc-token-${uid}`;
+
+export function cacheAccessToken(uid: string, token: string, expiry: number): void {
+  try {
+    localStorage.setItem(vcTokenCacheKey(uid), JSON.stringify({ token, expiry }));
+  } catch { /* ignore storage quota errors */ }
+}
+
+export function getCachedAccessToken(uid: string): { token: string; expiry: number } | null {
+  try {
+    const raw = localStorage.getItem(vcTokenCacheKey(uid));
+    if (!raw) return null;
+    const { token, expiry } = JSON.parse(raw) as { token: string; expiry: number };
+    if (expiry <= Date.now() + 5 * 60 * 1000) {
+      localStorage.removeItem(vcTokenCacheKey(uid));
+      return null;
+    }
+    return { token, expiry };
+  } catch {
+    return null;
+  }
+}
+
+// ── ファイル一覧 localStorage キャッシュ ─────────────────────────────────────
+
+const VC_FILES_CACHE_TTL = 30 * 60 * 1000;
+
+const vcFilesCacheKey = (uid: string, folderIds: string[]) =>
+  `vc-files-${uid}-${[...folderIds].sort().join(',')}`;
+
+export function cacheFileList(uid: string, folders: DriveFolder[], files: DriveFile[]): void {
+  try {
+    localStorage.setItem(
+      vcFilesCacheKey(uid, folders.map(f => f.id)),
+      JSON.stringify({ files, cachedAt: Date.now() }),
+    );
+  } catch { /* ignore storage quota errors */ }
+}
+
+export function getCachedFileList(uid: string, folders: DriveFolder[]): DriveFile[] | null {
+  try {
+    const key = vcFilesCacheKey(uid, folders.map(f => f.id));
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const { files, cachedAt } = JSON.parse(raw) as { files: DriveFile[]; cachedAt: number };
+    if (Date.now() - cachedAt > VC_FILES_CACHE_TTL) {
+      localStorage.removeItem(key);
+      return null;
+    }
+    return files;
+  } catch {
+    return null;
+  }
+}
+
 export const firestorePaths = {
   vcData: (uid: string) => `users/${uid}/videocollect/data`,
   vcAuth: (uid: string) => `users/${uid}/videocollect/auth`,
@@ -247,6 +304,7 @@ export async function loadAccessToken(
 ): Promise<string | null> {
   // 5分以上有効なら使用
   if (authData.tokenExpiry > Date.now() + 5 * 60 * 1000) {
+    cacheAccessToken(uid, authData.accessToken, authData.tokenExpiry);
     return authData.accessToken;
   }
   // リフレッシュ
@@ -258,7 +316,8 @@ export async function loadAccessToken(
       body: JSON.stringify({ uid, idToken }),
     });
     if (!resp.ok) return null;
-    const data = await resp.json() as { accessToken: string };
+    const data = await resp.json() as { accessToken: string; tokenExpiry: number };
+    cacheAccessToken(uid, data.accessToken, data.tokenExpiry);
     return data.accessToken;
   } catch (e) {
     console.error('loadAccessToken: トークンリフレッシュ失敗', e);

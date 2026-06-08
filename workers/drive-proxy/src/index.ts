@@ -14,6 +14,7 @@ export interface Env {
   GOOGLE_OAUTH_CLIENT_SECRET: string;
   GOOGLE_SERVICE_ACCOUNT: string;
   NONCE_KV: KVNamespace;
+  PUBLIC_JWK_CACHE_KEY: string;
   PUBLIC_JWK_CACHE_KV: KVNamespace;
 }
 
@@ -58,17 +59,22 @@ async function firestoreSet(
 
 // ── Firebase ID token 検証 ────────────────────────────────────────────────────
 
+type FirebaseAuthEnv = Pick<Env, 'FIREBASE_PROJECT_ID' | 'PUBLIC_JWK_CACHE_KEY' | 'PUBLIC_JWK_CACHE_KV'>;
+
+export function createFirebaseAuth(env: FirebaseAuthEnv): Auth {
+  return Auth.getOrInitialize(
+    env.FIREBASE_PROJECT_ID,
+    WorkersKVStoreSingle.getOrInitialize(env.PUBLIC_JWK_CACHE_KEY, env.PUBLIC_JWK_CACHE_KV),
+  );
+}
+
 /** Firebase ID トークンを署名検証し、有効なら uid を返す */
 async function verifyIdToken(
   idToken: string,
-  projectId: string,
-  jwkKv: KVNamespace,
+  env: FirebaseAuthEnv,
 ): Promise<string | null> {
   try {
-    const auth = Auth.getOrInitialize(
-      projectId,
-      WorkersKVStoreSingle.getOrInitialize(jwkKv),
-    );
+    const auth = createFirebaseAuth(env);
     const token = await auth.verifyIdToken(idToken, false);
     return token.uid;
   } catch {
@@ -137,7 +143,7 @@ async function handleNonce(
   }
   if (!uid || !idToken || !accessToken) return jsonError(cors, 'Missing required fields', 400);
 
-  const verifiedUid = await verifyIdToken(idToken, env.FIREBASE_PROJECT_ID, env.PUBLIC_JWK_CACHE_KV);
+  const verifiedUid = await verifyIdToken(idToken, env);
   if (!verifiedUid || verifiedUid !== uid) return jsonError(cors, 'Unauthorized', 401);
 
   // UUID v4 を nonce として生成
@@ -221,7 +227,7 @@ async function handleExchange(
   }
   if (!code || !uid || !idToken) return jsonError(cors, 'Missing required fields', 400);
 
-  const verifiedUid = await verifyIdToken(idToken, env.FIREBASE_PROJECT_ID, env.PUBLIC_JWK_CACHE_KV);
+  const verifiedUid = await verifyIdToken(idToken, env);
   if (!verifiedUid || verifiedUid !== uid) return jsonError(cors, 'Unauthorized', 401);
 
   const tokenResp = await fetch('https://oauth2.googleapis.com/token', {
@@ -279,7 +285,7 @@ async function handleRefresh(
   }
   if (!uid || !idToken) return jsonError(cors, 'Missing required fields', 400);
 
-  const verifiedUid = await verifyIdToken(idToken, env.FIREBASE_PROJECT_ID, env.PUBLIC_JWK_CACHE_KV);
+  const verifiedUid = await verifyIdToken(idToken, env);
   if (!verifiedUid || verifiedUid !== uid) return jsonError(cors, 'Unauthorized', 401);
 
   const sa: ServiceAccount = JSON.parse(env.GOOGLE_SERVICE_ACCOUNT);

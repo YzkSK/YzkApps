@@ -7,6 +7,7 @@ ALLOWED_ORIGIN = "https://my-portfolio-dzp.pages.dev"
 FIREBASE_PROJECT_ID = "timetable-b0d11"
 FIREBASE_WEB_API_KEY = "AIzaSyBdoOO8BICD4CWMRAc8iMpYUFL0mC-hG9k"
 GOOGLE_OAUTH_CLIENT_ID = "1081756109282-6a56radiar1g2bpv4b6vf15fj0fd65ql.apps.googleusercontent.com"
+PUBLIC_JWK_CACHE_KEY = "firebase-public-jwk"
 # Secrets (set via: wrangler secret put GOOGLE_OAUTH_CLIENT_SECRET)
 # GOOGLE_OAUTH_CLIENT_SECRET
 # GOOGLE_SERVICE_ACCOUNT

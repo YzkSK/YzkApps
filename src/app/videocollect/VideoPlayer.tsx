@@ -7,7 +7,7 @@ import { usePageTitle } from '../shared/usePageTitle';
 import { useFirestoreSave } from '../shared/useFirestoreSave';
 import '../shared/app.css';
 import './videocollect.css';
-import { type DriveFile, type VcAuth, type VcData, VC_INITIAL_DATA, firestorePaths, loadAccessToken, formatTime, parseVcData, VC_ERROR_CODES, fetchAllDriveFiles, buildVideoQuery, fetchDriveFileMetadata } from './constants';
+import { type DriveFile, type VcAuth, type VcData, VC_INITIAL_DATA, firestorePaths, loadAccessToken, getCachedAccessToken, formatTime, parseVcData, VC_ERROR_CODES, fetchAllDriveFiles, buildVideoQuery, fetchDriveFileMetadata } from './constants';
 import { TagModal } from './modals/TagModal';
 import { OfflineSaveModal } from './modals/OfflineSaveModal';
 import { isOfflineSaved, loadOfflineVideo, deleteOfflineVideo } from './offlineStorage';
@@ -180,6 +180,22 @@ export const VideoPlayer = () => {
 
   useEffect(() => {
     if (!currentUser) return;
+
+    const cached = getCachedAccessToken(currentUser.uid);
+    if (cached) {
+      // キャッシュヒット: 即座に nonce 取得開始（Firestore vcAuth を待たない）
+      setAccessToken(cached.token);
+      fetchNonce(cached.token).then(nonce => {
+        if (nonce) setVideoNonce(nonce);
+        else setLoadError(`動画の読み込みに失敗しました [${VC_ERROR_CODES.NONCE_FETCH}]`);
+      });
+      // vcData のみ読み込む（タグ・レコメンドで必要）
+      getDoc(doc(db, firestorePaths.vcData(currentUser.uid)))
+        .then(snap => { if (snap.exists()) setVcData(parseVcData(snap.data() as Record<string, unknown>)); })
+        .catch(e => console.error('VideoPlayer vcData 読み込みエラー:', e));
+      return;
+    }
+
     Promise.all([
       getDoc(doc(db, firestorePaths.vcAuth(currentUser.uid))),
       getDoc(doc(db, firestorePaths.vcData(currentUser.uid))),
