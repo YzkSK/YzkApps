@@ -72,6 +72,7 @@ export const Videocollect = () => {
     (localStorage.getItem('vc-view-mode') as 'grid' | 'list') ?? 'grid',
   );
   const [playingId] = useState<string | null>(() => localStorage.getItem('vc-playing-id'));
+  const [previewingId, setPreviewingId] = useState<string | null>(null);
   const [offlineIds, setOfflineIds] = useState<Set<string>>(new Set());
   const [offlineOnly, setOfflineOnly] = useState(false);
 
@@ -389,7 +390,9 @@ export const Videocollect = () => {
             tags={data.tags}
             accessToken={accessToken!}
             playingId={playingId}
+            previewingId={previewingId}
             offlineIds={offlineIds}
+            onPreviewChange={setPreviewingId}
             onTagEdit={file => setModal({ type: 'tag', file })}
             onRename={file => setModal({ type: 'rename', file })}
             onDelete={file => setModal({ type: 'delete', file })}
