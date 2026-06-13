@@ -77,6 +77,16 @@ export const VideoCard = ({ file, tags, accessToken, isPreviewing, isPlaying, is
   };
 
   const handleLoadedMetadata = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    const durationSec = isFinite(video.duration) ? video.duration : 0;
+    if (durationSec > 0) {
+      const clipSec = PREVIEW_CLIP_DURATION_MS / 1000;
+      const safeEnd = Math.max(0, durationSec - clipSec);
+      previewPositionsRef.current = Array.from({ length: PREVIEW_CLIP_COUNT }, () =>
+        Math.random() * safeEnd
+      ).sort((a, b) => a - b);
+    }
     seekToClip(0);
   };
 
