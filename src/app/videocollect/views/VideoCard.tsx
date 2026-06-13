@@ -29,17 +29,22 @@ export const VideoCard = ({ file, tags, accessToken, isPreviewing, isPlaying, is
   const videoRef = useRef<HTMLVideoElement>(null);
   const previewPositionsRef = useRef<number[]>([]);
   const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingClipIndexRef = useRef<number | null>(null);
 
   const proxyUrl = import.meta.env.VITE_DRIVE_PROXY_URL as string;
 
   const clearPreviewTimer = () => {
-    if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
+    if (previewTimerRef.current) {
+      clearTimeout(previewTimerRef.current);
+      previewTimerRef.current = null;
+    }
   };
 
   // 外部から isPreviewing が false になったとき（別カードが開始）にクリーンアップ
   useEffect(() => {
     if (!isPreviewing) {
       clearPreviewTimer();
+      pendingClipIndexRef.current = null;
       setPreviewNonce(null);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -72,7 +77,19 @@ export const VideoCard = ({ file, tags, accessToken, isPreviewing, isPlaying, is
       onPreviewChange(null);
       return;
     }
+    clearPreviewTimer();
+    pendingClipIndexRef.current = idx;
     video.currentTime = previewPositionsRef.current[idx];
+    if (video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA && !video.seeking) {
+      startClipTimer();
+    }
+  };
+
+  const startClipTimer = () => {
+    const idx = pendingClipIndexRef.current;
+    if (idx === null) return;
+    pendingClipIndexRef.current = null;
+    clearPreviewTimer();
     previewTimerRef.current = setTimeout(() => seekToClip(idx + 1), PREVIEW_CLIP_DURATION_MS);
   };
 
@@ -137,6 +154,8 @@ export const VideoCard = ({ file, tags, accessToken, isPreviewing, isPlaying, is
             playsInline
             preload="metadata"
             onLoadedMetadata={handleLoadedMetadata}
+            onCanPlay={startClipTimer}
+            onSeeked={startClipTimer}
           />
         ) : file.thumbnailLink ? (
           <img src={file.thumbnailLink} alt={file.name} loading="lazy" />

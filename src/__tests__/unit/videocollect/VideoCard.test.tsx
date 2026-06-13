@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -61,6 +61,7 @@ function renderCard(file: DriveFile) {
 
 describe('VideoCard preview', () => {
   afterEach(() => {
+    cleanup();
     vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
@@ -104,10 +105,64 @@ describe('VideoCard preview', () => {
     Object.defineProperty(video, 'duration', { configurable: true, value: 60 });
     fireEvent.loadedMetadata(video);
 
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(15_000);
-    });
+    for (let i = 0; i < 3; i += 1) {
+      fireEvent.canPlay(video);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5_000);
+      });
+    }
 
     expect(currentTimes.slice(0, 4)).toEqual([5.5, 11, 16.5, 22]);
+  });
+
+  it('waits until the preview clip is ready before counting clip duration', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({ nonce: 'nonce-1' }),
+    }));
+    const currentTimes: number[] = [];
+    Object.defineProperty(HTMLMediaElement.prototype, 'currentTime', {
+      configurable: true,
+      get() {
+        return originalCurrentTime?.get?.call(this) ?? 0;
+      },
+      set(value: number) {
+        currentTimes.push(value);
+        originalCurrentTime?.set?.call(this, value);
+      },
+    });
+
+    renderCard({
+      ...baseFile,
+      videoMediaMetadata: { durationMillis: '60000' },
+    });
+
+    fireEvent.click(screen.getByText('sample.mp4').closest('.vc-card')!);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const video = document.querySelector('video') as HTMLVideoElement;
+    vi.spyOn(Math, 'random')
+      .mockReturnValueOnce(0.1)
+      .mockReturnValueOnce(0.2)
+      .mockReturnValueOnce(0.3)
+      .mockReturnValueOnce(0.4);
+    Object.defineProperty(video, 'duration', { configurable: true, value: 60 });
+    fireEvent.loadedMetadata(video);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20_000);
+    });
+
+    expect(currentTimes).toEqual([5.5]);
+
+    fireEvent.canPlay(video);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+
+    expect(currentTimes).toEqual([5.5, 11]);
   });
 });
