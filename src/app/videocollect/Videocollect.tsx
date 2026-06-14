@@ -151,6 +151,19 @@ export const Videocollect = () => {
   }, [addToast, currentUser]);
 
   const hasInitializedRef = useRef(false);
+  const scrollRestoredRef = useRef(false);
+
+  useEffect(() => {
+    if (pageState.status !== 'loaded' || scrollRestoredRef.current) return;
+    const stored = sessionStorage.getItem('vc-scroll-y');
+    if (!stored) return;
+    scrollRestoredRef.current = true;
+    sessionStorage.removeItem('vc-scroll-y');
+    const y = Number(stored);
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: y, behavior: 'instant' });
+    });
+  }, [pageState.status]);
 
   // VcData のロード完了 + accessToken の両方が揃ったら一覧取得
   useEffect(() => {
