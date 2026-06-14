@@ -108,6 +108,7 @@ export const VideoCard = ({ file, tags, accessToken, isPreviewing, isPlaying, is
   };
 
   const handlePlay = () => {
+    sessionStorage.setItem('vc-scroll-y', String(window.scrollY));
     navigate(`/videocollect/play?id=${encodeURIComponent(file.id)}&name=${encodeURIComponent(file.name)}`);
   };
 

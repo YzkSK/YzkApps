@@ -16,6 +16,11 @@ export const VideoList = ({ files, tags, playingId, offlineIds, onTagEdit, onRen
   const navigate = useNavigate();
   const isPlaying = (id: string) => id === playingId;
 
+  const handlePlay = (file: DriveFile) => {
+    sessionStorage.setItem('vc-scroll-y', String(window.scrollY));
+    navigate(`/videocollect/play?id=${encodeURIComponent(file.id)}&name=${encodeURIComponent(file.name)}`);
+  };
+
   return (
     <div className="vc-list">
       {files.map(file => {
@@ -28,10 +33,10 @@ export const VideoList = ({ files, tags, playingId, offlineIds, onTagEdit, onRen
             {/* サムネイル */}
             <div
               className="vc-list-thumb"
-              onClick={() => navigate(`/videocollect/play?id=${encodeURIComponent(file.id)}&name=${encodeURIComponent(file.name)}`)}
+              onClick={() => handlePlay(file)}
               role="button"
               tabIndex={0}
-              onKeyDown={e => { if (e.key === 'Enter') navigate(`/videocollect/play?id=${encodeURIComponent(file.id)}&name=${encodeURIComponent(file.name)}`); }}
+              onKeyDown={e => { if (e.key === 'Enter') handlePlay(file); }}
             >
               {file.thumbnailLink
                 ? <img src={file.thumbnailLink} alt={file.name} loading="lazy" />
