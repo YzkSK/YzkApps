@@ -30,7 +30,7 @@ import {
   renameFile,
   trashFile,
 } from './constants';
-import { listOfflineSavedIds } from './offlineStorage';
+import { listOfflineSavedIds, listOfflineEntries } from './offlineStorage';
 
 import { VideoGrid } from './views/VideoGrid';
 import { VideoList } from './views/VideoList';
@@ -42,10 +42,23 @@ import { RenameModal } from './modals/RenameModal';
 import { DeleteModal } from './modals/DeleteModal';
 import { DownloadProgressCard } from './DownloadProgressCard';
 
+async function buildOfflineFiles(): Promise<DriveFile[]> {
+  const entries = await listOfflineEntries();
+  return entries.map(e => ({
+    id: e.fileId,
+    name: e.fileName,
+    mimeType: 'video/mp4',
+    size: String(e.size),
+    modifiedTime: new Date(e.savedAt).toISOString(),
+    thumbnailLink: e.thumbnailLink,
+  }));
+}
+
 type PageState =
   | { status: 'unauthenticated' }
   | { status: 'loading' }
   | { status: 'error' }
+  | { status: 'offline'; files: DriveFile[] }
   | { status: 'empty' }
   | { status: 'loaded'; files: DriveFile[] };
 
@@ -127,9 +140,16 @@ export const Videocollect = () => {
         // トークンがリフレッシュされた場合のみ更新
         if (token !== cached?.token) setAccessToken(token);
       })
-      .catch(e => {
+      .catch(async (e) => {
         console.error('VcAuth 読み込みエラー:', e);
-        if (!cached) setPageState({ status: 'error' });
+        if (!cached) {
+          const offlineFiles = await buildOfflineFiles().catch(() => []);
+          if (offlineFiles.length > 0) {
+            setPageState({ status: 'offline', files: offlineFiles });
+          } else {
+            setPageState({ status: 'error' });
+          }
+        }
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser]);
@@ -143,8 +163,13 @@ export const Videocollect = () => {
     } catch (e) {
       console.error('ファイル取得エラー:', e);
       if (!silent) {
-        addToast(`動画一覧の取得に失敗しました [${VC_ERROR_CODES.FILES_FETCH}]`, 'error');
-        setPageState({ status: 'error' });
+        const offlineFiles = await buildOfflineFiles().catch(() => []);
+        if (offlineFiles.length > 0) {
+          setPageState({ status: 'offline', files: offlineFiles });
+        } else {
+          addToast(`動画一覧の取得に失敗しました [${VC_ERROR_CODES.FILES_FETCH}]`, 'error');
+          setPageState({ status: 'error' });
+        }
       }
     }
   }, [addToast, currentUser]);
@@ -153,7 +178,7 @@ export const Videocollect = () => {
   const scrollRestoredRef = useRef(false);
 
   useEffect(() => {
-    if (pageState.status !== 'loaded' || scrollRestoredRef.current) return;
+    if ((pageState.status !== 'loaded' && pageState.status !== 'offline') || scrollRestoredRef.current) return;
     const stored = sessionStorage.getItem('vc-scroll-y');
     if (!stored) return;
     scrollRestoredRef.current = true;
@@ -187,7 +212,7 @@ export const Videocollect = () => {
   }, [data.tags]);
 
   const filteredFiles = useMemo(() => {
-    if (pageState.status !== 'loaded') return [];
+    if (pageState.status !== 'loaded' && pageState.status !== 'offline') return [];
     let files = activeTags.length > 0
       ? pageState.files.filter(f => activeTags.some(t => (data.tags[f.id] ?? []).includes(t)))
       : pageState.files;
@@ -283,28 +308,49 @@ export const Videocollect = () => {
 
   return (
     <AppLayout pageClassName="vc-page" className="" dbError={dbError} toasts={toasts} header={vcHeader}>
+      {pageState.status === 'offline' && (
+        <div style={{
+          background: 'rgba(234, 179, 8, 0.15)',
+          borderBottom: '1px solid rgba(234, 179, 8, 0.3)',
+          padding: '8px 16px',
+          fontSize: 12,
+          color: '#eab308',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+        }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M1 1l22 22M16.72 11.06A10.94 10.94 0 0 1 19 12.55M5 12.55a10.94 10.94 0 0 1 5.17-2.39M10.71 5.05A16 16 0 0 1 22.56 9M1.42 9a15.91 15.91 0 0 1 4.7-2.88M8.53 16.11a6 6 0 0 1 6.95 0M12 20h.01" />
+          </svg>
+          オフラインモード — 保存済み動画のみ表示しています
+        </div>
+      )}
       <main style={{ padding: '16px', paddingBottom: 80 }}>
         <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center' }}>
-          <button
-            className="vc-icon-btn"
-            onClick={() => setModal({ type: 'folder' })}
-            aria-label="フォルダ設定"
-            title="フォルダ設定"
-            style={{ border: '1px solid var(--vc-card-border)', borderRadius: 8, padding: '6px 10px', gap: 6 }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z" />
-            </svg>
-            <span style={{ fontSize: 13 }}>フォルダ</span>
-          </button>
-          <Button
-            variant="default"
-            size="sm"
-            onClick={() => setModal({ type: 'upload' })}
-            disabled={!accessToken}
-          >
-            アップロード
-          </Button>
+          {pageState.status !== 'offline' && (
+            <button
+              className="vc-icon-btn"
+              onClick={() => setModal({ type: 'folder' })}
+              aria-label="フォルダ設定"
+              title="フォルダ設定"
+              style={{ border: '1px solid var(--vc-card-border)', borderRadius: 8, padding: '6px 10px', gap: 6 }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z" />
+              </svg>
+              <span style={{ fontSize: 13 }}>フォルダ</span>
+            </button>
+          )}
+          {pageState.status !== 'offline' && (
+            <Button
+              variant="default"
+              size="sm"
+              onClick={() => setModal({ type: 'upload' })}
+              disabled={!accessToken}
+            >
+              アップロード
+            </Button>
+          )}
           <button
             className="vc-icon-btn"
             onClick={() => setModal({ type: 'filter' })}
@@ -376,7 +422,7 @@ export const Videocollect = () => {
             </p>
           </div>
         )}
-        {pageState.status === 'loaded' && filteredFiles.length === 0 && (activeTags.length > 0 || offlineOnly) && (
+        {(pageState.status === 'loaded' || pageState.status === 'offline') && filteredFiles.length === 0 && (activeTags.length > 0 || offlineOnly) && (
           <div className="vc-empty">
             <p style={{ fontSize: 14, color: 'var(--vc-text-secondary)', marginBottom: 8 }}>
               {offlineOnly && activeTags.length === 0
@@ -396,11 +442,11 @@ export const Videocollect = () => {
             >フィルターを解除</button>
           </div>
         )}
-        {pageState.status === 'loaded' && filteredFiles.length > 0 && viewMode === 'grid' && (
+        {(pageState.status === 'loaded' || pageState.status === 'offline') && filteredFiles.length > 0 && viewMode === 'grid' && (
           <VideoGrid
             files={filteredFiles}
             tags={data.tags}
-            accessToken={accessToken!}
+            accessToken={accessToken ?? ''}
             playingId={playingId}
             previewingId={previewingId}
             offlineIds={offlineIds}
@@ -410,7 +456,7 @@ export const Videocollect = () => {
             onDelete={file => setModal({ type: 'delete', file })}
           />
         )}
-        {pageState.status === 'loaded' && filteredFiles.length > 0 && viewMode === 'list' && (
+        {(pageState.status === 'loaded' || pageState.status === 'offline') && filteredFiles.length > 0 && viewMode === 'list' && (
           <VideoList
             files={filteredFiles}
             tags={data.tags}

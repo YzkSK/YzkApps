@@ -8,15 +8,7 @@ import { clearCachesAndReload } from './app/shared/ErrorBoundary';
 // アプリ起動時に SW を登録（BgFetch / FCM 両方に必要）
 // Timetable を開く前でも BgFetch が使えるようにするため main.tsx で行う
 if ('serviceWorker' in navigator) {
-  const swParams = new URLSearchParams({
-    apiKey:            import.meta.env.VITE_FIREBASE_API_KEY,
-    authDomain:        import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-    projectId:         import.meta.env.VITE_FIREBASE_PROJECT_ID,
-    storageBucket:     import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-    appId:             import.meta.env.VITE_FIREBASE_APP_ID,
-  });
-  navigator.serviceWorker.register(`/firebase-messaging-sw.js?${swParams}`).catch(() => {});
+  navigator.serviceWorker.register('/sw.js').catch(() => {});
 }
 
 window.addEventListener('error', (e) => {
