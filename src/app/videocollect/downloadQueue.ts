@@ -16,31 +16,8 @@ export type DownloadTask = {
   errorCode?: string;
 };
 
-// Minimal inline types for Background Fetch API (not in standard TS lib)
-interface BgFetchRegistration {
-  id: string;
-  downloaded: number;
-  downloadTotal: number;
-  result: '' | 'success' | 'failure';
-  addEventListener(event: 'progress', fn: () => void): void;
-  abort?(): Promise<boolean>;
-  updateUI?(opts: { title?: string }): Promise<void>;
-}
-interface BgFetchManager {
-  fetch(id: string, requests: RequestInfo[], options?: {
-    title?: string;
-    downloadTotal?: number;
-    icons?: Array<{ src: string; sizes?: string; type?: string }>;
-  }): Promise<BgFetchRegistration>;
-  get(id: string): Promise<BgFetchRegistration | undefined>;
-}
-
-type DownloadOpts = { fileId: string; fileName: string; proxyUrl: string; accessToken: string; fileSizeBytes?: number };
-
 const tasks            = new Map<string, DownloadTask>();
 const abortControllers = new Map<string, AbortController>();
-const bgFetchRegs      = new Map<string, BgFetchRegistration>();
-const downloadOpts     = new Map<string, DownloadOpts>();
 const listeners        = new Set<() => void>();
 
 function notify(): void {
@@ -61,43 +38,6 @@ export function isDownloading(fileId: string): boolean {
   return !!t && t.phase !== 'done' && t.phase !== 'error';
 }
 
-// SW message listener — handles BG fetch completion
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.addEventListener('message', (event: MessageEvent) => {
-    const data = event.data as { type?: string; fileId?: string; fileName?: string } | null;
-    if (!data?.type || !data?.fileId) return;
-    const { fileId } = data;
-    console.info('[downloadQueue] SW message', { type: data.type, fileId, taskExists: tasks.has(fileId) });
-
-    if (data.type === 'vc-bgfetch-done') {
-      bgFetchRegs.delete(fileId);
-      downloadOpts.delete(fileId);
-      if (tasks.has(fileId)) {
-        abortControllers.delete(fileId);
-        patch(fileId, { phase: 'done', progress: 1 });
-        setTimeout(() => { tasks.delete(fileId); notify(); }, 4000);
-      }
-    } else if (data.type === 'vc-bgfetch-fail') {
-      bgFetchRegs.delete(fileId);
-      const opts = downloadOpts.get(fileId);
-      if (tasks.has(fileId) && opts) {
-        // BgFetch 失敗 → in-page ダウンロードにフォールバック
-        console.warn('[downloadQueue] BgFetch failed, falling back to in-page download', { fileId });
-        patch(fileId, { phase: 'fetching', progress: 0 });
-        const controller = new AbortController();
-        abortControllers.set(fileId, controller);
-        runInPage({ ...opts, signal: controller.signal }).catch(e => {
-          console.error('[downloadQueue] in-page fallback error', e);
-          if (tasks.has(fileId)) setError(fileId, VC_ERROR_CODES.OFFLINE_SAVE);
-        });
-      } else if (tasks.has(fileId)) {
-        abortControllers.delete(fileId);
-        patch(fileId, { phase: 'error', progress: 0, errorCode: VC_ERROR_CODES.OFFLINE_SAVE });
-      }
-    }
-  });
-}
-
 // ─── Public API ──────────────────────────────────────────────────────────────
 
 export function startDownload(opts: {
@@ -108,30 +48,16 @@ export function startDownload(opts: {
   fileSizeBytes?: number;
 }): void {
   if (tasks.has(opts.fileId)) return;
-  console.info('[downloadQueue] startDownload', {
-    fileId: opts.fileId,
-    fileName: opts.fileName,
-    fileSizeBytes: opts.fileSizeBytes ?? 0,
-    hasToken: Boolean(opts.accessToken),
-    proxyUrl: opts.proxyUrl,
-  });
   tasks.set(opts.fileId, { fileId: opts.fileId, fileName: opts.fileName, phase: 'fetching', progress: 0 });
-  downloadOpts.set(opts.fileId, opts);
   notify();
 
   acquireWakeLock().catch(() => {});
-  launchWithBgFetch(opts);
+  launchDownload(opts);
 }
 
 export function cancelDownload(fileId: string): void {
-  const bgReg = bgFetchRegs.get(fileId);
-  if (bgReg) {
-    bgReg.abort?.();
-    bgFetchRegs.delete(fileId);
-  }
   abortControllers.get(fileId)?.abort();
   abortControllers.delete(fileId);
-  downloadOpts.delete(fileId);
   tasks.delete(fileId);
   notify();
 }
@@ -155,8 +81,6 @@ function patch(fileId: string, changes: Partial<DownloadTask>): void {
 
 function cleanup(fileId: string): void {
   abortControllers.delete(fileId);
-  bgFetchRegs.delete(fileId);
-  downloadOpts.delete(fileId);
   tasks.delete(fileId);
   notify();
   const hasActive = Array.from(tasks.values()).some(t => t.phase === 'fetching' || t.phase === 'saving');
@@ -167,13 +91,10 @@ function cleanup(fileId: string): void {
 
 function setError(fileId: string, errorCode: string): void {
   abortControllers.delete(fileId);
-  downloadOpts.delete(fileId);
   patch(fileId, { phase: 'error', progress: 0, errorCode });
 }
 
-// ─── BG Fetch → in-page fallback ─────────────────────────────────────────────
-
-function launchWithBgFetch(opts: {
+function launchDownload(opts: {
   fileId: string;
   fileName: string;
   proxyUrl: string;
@@ -190,66 +111,7 @@ function launchWithBgFetch(opts: {
   });
 }
 
-// ─── Background Fetch ────────────────────────────────────────────────────────
-
-async function tryStartBgFetch(opts: {
-  fileId: string;
-  fileName: string;
-  proxyUrl: string;
-  accessToken: string;
-  fileSizeBytes?: number;
-}): Promise<boolean> {
-  const { fileId, fileName, proxyUrl, accessToken, fileSizeBytes = 0 } = opts;
-  const reg = await navigator.serviceWorker.getRegistration();
-  if (!reg || !('backgroundFetch' in reg)) {
-    console.warn('[downloadQueue] Background Fetch unavailable (no SW or no BgFetch API)', { fileId, hasReg: Boolean(reg) });
-    return false;
-  }
-
-  const bgFetchApi = (reg as unknown as { backgroundFetch: BgFetchManager }).backgroundFetch;
-  const bgFetchId  = `vc-bg-${fileId}`;
-  const streamUrl  = `${proxyUrl}/stream/${encodeURIComponent(fileId)}?token=${encodeURIComponent(accessToken)}`;
-
-  const cache = await caches.open('vc-bgfetch-meta');
-  await cache.put(
-    `/${bgFetchId}`,
-    new Response(JSON.stringify({ fileId, fileName, quality: 'original' }), {
-      headers: { 'Content-Type': 'application/json' },
-    }),
-  );
-
-  const bgFetch = await bgFetchApi.fetch(
-    bgFetchId,
-    [new Request(streamUrl, { headers: { Range: 'bytes=0-' } })],
-    { title: fileName, ...(fileSizeBytes > 0 ? { downloadTotal: fileSizeBytes } : {}) },
-  );
-
-  console.info('[downloadQueue] BgFetch started', { bgFetchId, fileId, fileSizeBytes, streamUrl });
-  bgFetchRegs.set(fileId, bgFetch);
-
-  bgFetch.addEventListener('progress', () => {
-    console.info('[downloadQueue] BgFetch progress', {
-      fileId,
-      result: bgFetch.result,
-      downloaded: bgFetch.downloaded,
-      downloadTotal: bgFetch.downloadTotal,
-    });
-    if (bgFetch.result === 'success') {
-      bgFetchRegs.delete(fileId);
-      patch(fileId, { phase: 'done', progress: 1 });
-      setTimeout(() => { tasks.delete(fileId); notify(); }, 4000);
-    } else if (bgFetch.result === 'failure') {
-      bgFetchRegs.delete(fileId);
-      if (tasks.has(fileId)) setError(fileId, VC_ERROR_CODES.OFFLINE_SAVE);
-    } else if (bgFetch.downloadTotal > 0) {
-      patch(fileId, { phase: 'fetching', progress: bgFetch.downloaded / bgFetch.downloadTotal });
-    }
-  });
-
-  return true;
-}
-
-// ─── In-page fallback: parallel chunk download ───────────────────────────────
+// ─── In-page parallel chunk download ─────────────────────────────────────────
 
 const CHUNK_SIZE = 8 * 1024 * 1024; // 8 MB per chunk
 const MAX_PARALLEL = 6;
