@@ -189,13 +189,15 @@ async function tryStartBgFetch(opts: {
   fileSizeBytes?: number;
 }): Promise<boolean> {
   const { fileId, fileName, proxyUrl, accessToken, fileSizeBytes = 0 } = opts;
-  const sw = await navigator.serviceWorker.ready;
-  if (!('backgroundFetch' in sw)) {
-    console.warn('[downloadQueue] Background Fetch API not supported', { fileId });
+  // navigator.serviceWorker.ready は SW 未登録の場合に永久に resolve しないため
+  // getRegistration() で即時チェックする
+  const reg = await navigator.serviceWorker.getRegistration();
+  if (!reg || !('backgroundFetch' in reg)) {
+    console.warn('[downloadQueue] Background Fetch unavailable (no SW or no BgFetch API)', { fileId, hasReg: Boolean(reg) });
     return false;
   }
 
-  const bgFetchApi = (sw as unknown as { backgroundFetch: BgFetchManager }).backgroundFetch;
+  const bgFetchApi = (reg as unknown as { backgroundFetch: BgFetchManager }).backgroundFetch;
   const bgFetchId  = `vc-bg-${fileId}`;
   const streamUrl  = `${proxyUrl}/stream/${encodeURIComponent(fileId)}?token=${encodeURIComponent(accessToken)}`;
 
