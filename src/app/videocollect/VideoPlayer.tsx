@@ -817,7 +817,12 @@ export const VideoPlayer = () => {
             ) : (
               <button
                 className="vc-player-btn"
-                onClick={() => setShowOfflineSaveModal(true)}
+                onClick={async () => {
+                  if (!accessToken) return;
+                  const nonce = await fetchNonce(accessToken);
+                  if (nonce) setVideoNonce(nonce);
+                  setShowOfflineSaveModal(true);
+                }}
                 aria-label="オフラインで保存"
                 title="オフラインで保存"
               >
@@ -1241,13 +1246,13 @@ export const VideoPlayer = () => {
         />
       )}
 
-      {showOfflineSaveModal && accessToken && (
+      {showOfflineSaveModal && videoNonce && (
         <OfflineSaveModal
           fileId={fileId}
           fileName={fileName}
           fileSize={fileSize}
           proxyUrl={proxyUrl}
-          accessToken={accessToken}
+          accessToken={videoNonce}
           onClose={() => setShowOfflineSaveModal(false)}
           addToast={addToast}
         />
