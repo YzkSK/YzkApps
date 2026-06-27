@@ -181,14 +181,6 @@ function launchWithBgFetch(opts: {
   fileSizeBytes?: number;
 }): void {
   (async () => {
-    if ('serviceWorker' in navigator) {
-      const started = await tryStartBgFetch(opts).catch((e) => {
-        console.error('[downloadQueue] tryStartBgFetch threw', e);
-        return false;
-      });
-      if (started) return;
-      console.warn('[downloadQueue] BgFetch unavailable/failed — falling back to in-page download', { fileId: opts.fileId });
-    }
     const controller = new AbortController();
     abortControllers.set(opts.fileId, controller);
     await runInPage({ ...opts, signal: controller.signal });
