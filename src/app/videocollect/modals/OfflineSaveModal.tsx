@@ -90,7 +90,7 @@ export const OfflineSaveModal = ({
           onClick={handleSave}
           style={{ width: '100%', padding: '10px 0', borderRadius: 8, border: 'none', background: '#3b82f6', color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
         >
-          バックグラウンドで保存
+          オフラインで保存
         </button>
       </div>
     </div>

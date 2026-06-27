@@ -39,15 +39,15 @@ describe('OfflineSaveModal', () => {
 
   it('保存ボタンが表示される', () => {
     render(<OfflineSaveModal {...defaultProps} />);
-    expect(screen.getByRole('button', { name: /バックグラウンドで保存/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /オフラインで保存/ })).toBeTruthy();
   });
 
   it('保存ボタンを押すと startDownload が呼ばれてモーダルが閉じる', async () => {
     const { startDownload } = await import('@/app/videocollect/downloadQueue');
     render(<OfflineSaveModal {...defaultProps} />);
 
-    await waitFor(() => screen.getByRole('button', { name: /バックグラウンドで保存/ }));
-    fireEvent.click(screen.getByRole('button', { name: /バックグラウンドで保存/ }));
+    await waitFor(() => screen.getByRole('button', { name: /オフラインで保存/ }));
+    fireEvent.click(screen.getByRole('button', { name: /オフラインで保存/ }));
 
     await waitFor(() => {
       expect(startDownload).toHaveBeenCalledWith(expect.objectContaining({
@@ -68,8 +68,8 @@ describe('OfflineSaveModal', () => {
 
     render(<OfflineSaveModal {...defaultProps} />);
 
-    await waitFor(() => screen.getByRole('button', { name: /バックグラウンドで保存/ }));
-    fireEvent.click(screen.getByRole('button', { name: /バックグラウンドで保存/ }));
+    await waitFor(() => screen.getByRole('button', { name: /オフラインで保存/ }));
+    fireEvent.click(screen.getByRole('button', { name: /オフラインで保存/ }));
 
     await waitFor(() => {
       expect(defaultProps.addToast).toHaveBeenCalledWith(expect.stringContaining('超えます'), 'warning');
