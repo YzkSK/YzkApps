@@ -37,7 +37,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           if (user) {
             const snap = await getDoc(doc(db, 'users', user.uid, 'profile', 'data'));
             if (callbackId !== latestCallbackId) return;
-            setUsername(snap.exists() ? (snap.data().username as string) : null);
+            const val = snap.exists() ? (snap.data().username as string ?? null) : null;
+            localStorage.setItem(`auth-username-${user.uid}`, JSON.stringify(val));
+            setUsername(val);
           } else {
             if (callbackId !== latestCallbackId) return;
             setUsername(null);
@@ -45,7 +47,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         } catch (e) {
           if (callbackId !== latestCallbackId) return;
           console.error('AuthContext: プロフィール取得失敗', e);
-          setUsername(null);
+          if (user) {
+            const cached = localStorage.getItem(`auth-username-${user.uid}`);
+            setUsername(cached !== null ? (JSON.parse(cached) as string | null) : null);
+          } else {
+            setUsername(null);
+          }
         } finally {
           if (callbackId === latestCallbackId) {
             setLoading(false);

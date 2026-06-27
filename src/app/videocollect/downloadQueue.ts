@@ -8,11 +8,22 @@ export type DownloadPhase =
   | 'done'
   | 'error';
 
+export type ChunkState = 'pending' | 'downloading' | 'done';
+
+export type ChunkInfo = {
+  index: number;
+  total: number;
+  received: number;
+  status: ChunkState;
+};
+
 export type DownloadTask = {
   fileId: string;
   fileName: string;
   phase: DownloadPhase;
   progress: number;
+  speed?: number;
+  chunks?: ChunkInfo[];
   errorCode?: string;
   thumbnailLink?: string;
 };
@@ -168,23 +179,44 @@ async function runInPage(opts: {
     const chunkCount = ranges.length;
     const results = new Array<Uint8Array[]>(chunkCount);
 
+    const chunkStates: ChunkInfo[] = ranges.map((range, i) => ({
+      index: i,
+      total: range[1] - range[0] + 1,
+      received: 0,
+      status: 'pending' as ChunkState,
+    }));
+    patch(fileId, { chunks: [...chunkStates] });
+
     // セマフォで同時接続数を MAX_PARALLEL に制限
     let active = 0;
     let nextIdx = 0;
     let totalReceived = 0;
+    const startTime = Date.now();
 
     await new Promise<void>((resolve, reject) => {
       const tryNext = () => {
         while (active < MAX_PARALLEL && nextIdx < chunkCount) {
           const idx = nextIdx++;
           active++;
+          chunkStates[idx].status = 'downloading';
+          patch(fileId, { chunks: [...chunkStates] });
           fetchChunk(streamUrl, ranges[idx], signal, (bytes) => {
             totalReceived += bytes;
-            patch(fileId, { phase: 'fetching', progress: Math.min(totalReceived / total, 0.99) });
+            chunkStates[idx].received += bytes;
+            const elapsedSec = (Date.now() - startTime) / 1000;
+            const speed = elapsedSec > 0.2 ? (totalReceived / elapsedSec) / (1024 * 1024) : undefined;
+            patch(fileId, {
+              phase: 'fetching',
+              progress: Math.min(totalReceived / total, 0.99),
+              speed,
+              chunks: [...chunkStates],
+            });
           })
             .then(({ chunks, type }) => {
               if (type && !contentType.startsWith('video')) contentType = type;
               results[idx] = chunks;
+              chunkStates[idx].status = 'done';
+              chunkStates[idx].received = chunkStates[idx].total;
               active--;
               if (nextIdx < chunkCount) {
                 tryNext();
@@ -257,6 +289,7 @@ async function runInPageStream(opts: {
 
   const total = parseInt(resp.headers.get('Content-Length') ?? '0', 10);
   let received = 0;
+  const streamStartTime = Date.now();
   const reader = resp.body?.getReader();
   if (!reader) throw new Error('no body');
   const chunks: Uint8Array[] = [];
@@ -266,7 +299,9 @@ async function runInPageStream(opts: {
     chunks.push(value);
     if (total > 0) {
       received += value.length;
-      patch(fileId, { phase: 'fetching', progress: Math.min(received / total, 0.99) });
+      const elapsedSec = (Date.now() - streamStartTime) / 1000;
+      const speed = elapsedSec > 0.2 ? (received / elapsedSec) / (1024 * 1024) : undefined;
+      patch(fileId, { phase: 'fetching', progress: Math.min(received / total, 0.99), speed });
     }
   }
 

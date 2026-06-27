@@ -76,9 +76,16 @@ export const InstalledAppsProvider = ({ children }: { children: ReactNode }) => 
           installed = await migrateInstalledApps(uid);
         }
 
+        localStorage.setItem(`installed-apps-${uid}`, JSON.stringify(installed));
         if (isMounted) setInstalledIds(new Set(installed));
       } catch (e) {
         console.error('[InstalledAppsContext] failed to load installedApps', e);
+        if (isMounted) {
+          const cached = localStorage.getItem(`installed-apps-${uid}`);
+          if (cached) {
+            try { setInstalledIds(new Set(JSON.parse(cached) as string[])); } catch { /* ignore */ }
+          }
+        }
       } finally {
         if (isMounted) {
           setLoading('installedApps', false);
@@ -106,6 +113,7 @@ export const InstalledAppsProvider = ({ children }: { children: ReactNode }) => 
     setInstalledIds(next);
     try {
       await saveInstalledIds(currentUser.uid, next);
+      localStorage.setItem(`installed-apps-${currentUser.uid}`, JSON.stringify([...next]));
     } catch (e) {
       console.error('[InstalledAppsContext] failed to save install', e);
       setInstalledIds(prev);
@@ -135,6 +143,7 @@ export const InstalledAppsProvider = ({ children }: { children: ReactNode }) => 
     // （onUninstall でデータが削除済みの可能性があるためロールバックしない）
     try {
       await saveInstalledIds(currentUser.uid, next);
+      localStorage.setItem(`installed-apps-${currentUser.uid}`, JSON.stringify([...next]));
     } catch (e) {
       console.error('[InstalledAppsContext] failed to save uninstall', e);
       addToast(`アンインストールの保存に失敗しました [${ERROR_CODES.UNINSTALL_SAVE}]`, 'error');

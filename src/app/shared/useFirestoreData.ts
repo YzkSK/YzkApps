@@ -59,7 +59,9 @@ export function useFirestoreData<T>(opts: Options<T>): FirestoreDataResult<T> {
       } catch (e) {
         if (cancelled) return;
         console.error(`Firestore読み込みエラー [${loadingKey}]:`, e);
-        setDbError(true);
+        if (navigator.onLine) {
+          setDbError(true);
+        }
       } finally {
         if (!cancelled) {
           setLoading(false);

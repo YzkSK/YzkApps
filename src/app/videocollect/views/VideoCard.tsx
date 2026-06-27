@@ -18,9 +18,10 @@ type Props = {
   onTagEdit: (file: DriveFile) => void;
   onRename: (file: DriveFile) => void;
   onDelete: (file: DriveFile) => void;
+  onOfflineDelete?: (file: DriveFile) => void;
 };
 
-export const VideoCard = ({ file, tags, accessToken, isPreviewing, isPlaying, isOffline, onPreviewChange, onTagEdit, onRename, onDelete }: Props) => {
+export const VideoCard = ({ file, tags, accessToken, isPreviewing, isPlaying, isOffline, onPreviewChange, onTagEdit, onRename, onDelete, onOfflineDelete }: Props) => {
   const navigate = useNavigate();
   const { currentUser } = useAuth();
   const duration = file.videoMediaMetadata?.durationMillis;
@@ -204,7 +205,7 @@ export const VideoCard = ({ file, tags, accessToken, isPreviewing, isPlaying, is
           {tags.map(tag => (
             <span key={tag} className="vc-tag">{tag}</span>
           ))}
-          {!isOffline && (
+          {!isOffline ? (
             <div style={{ marginLeft: 'auto', display: 'flex', gap: 2, flexShrink: 0 }}>
               <button
                 className="vc-icon-btn"
@@ -240,6 +241,23 @@ export const VideoCard = ({ file, tags, accessToken, isPreviewing, isPlaying, is
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
                   <line x1="7" y1="7" x2="7.01" y2="7" />
+                </svg>
+              </button>
+            </div>
+          ) : onOfflineDelete && (
+            <div style={{ marginLeft: 'auto', flexShrink: 0 }}>
+              <button
+                className="vc-icon-btn"
+                onClick={e => { e.stopPropagation(); onOfflineDelete(file); }}
+                aria-label="オフライン保存を削除"
+                title="オフライン保存を削除"
+                style={{ color: '#ef4444' }}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polyline points="3 6 5 6 21 6" />
+                  <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                  <path d="M10 11v6M14 11v6" />
+                  <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
                 </svg>
               </button>
             </div>
