@@ -2,11 +2,10 @@ import { useState, useEffect, useRef } from 'react';
 import { subscribeTasks, getTasks, cancelDownload, dismissError, type DownloadTask } from './downloadQueue';
 
 const PHASE_LABEL: Record<string, string> = {
-  'fetching':    '取得中',
-  'compressing': '圧縮中',
-  'saving':      '保存中',
-  'done':        '保存完了',
-  'error':       'エラー',
+  'fetching': '取得中',
+  'saving':   '保存中',
+  'done':     '保存完了',
+  'error':    'エラー',
 };
 
 export const DownloadProgressCard = () => {
@@ -24,16 +23,13 @@ export const DownloadProgressCard = () => {
 };
 
 const TaskCard = ({ task }: { task: DownloadTask }) => {
-  const { fileId, fileName, phase, progress, errorCode, logs } = task;
-  const [logsOpen, setLogsOpen] = useState(false);
+  const { fileId, fileName, phase, progress, errorCode } = task;
   const touchStartX = useRef<number | null>(null);
 
   const isActive = phase !== 'done' && phase !== 'error';
   const isDone   = phase === 'done';
   const isError  = phase === 'error';
-  const showBar  = phase === 'fetching' || phase === 'compressing';
   const pct      = Math.round(progress * 100);
-  const hasLogs  = isError && !!logs?.length;
 
   const handleTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX;
@@ -55,10 +51,8 @@ const TaskCard = ({ task }: { task: DownloadTask }) => {
     <div
       onTouchStart={isError ? handleTouchStart : undefined}
       onTouchEnd={isError ? handleTouchEnd : undefined}
-      onClick={hasLogs ? () => setLogsOpen(o => !o) : undefined}
       style={{
         pointerEvents: 'auto',
-        cursor: hasLogs ? 'pointer' : 'default',
         background: 'rgba(18,18,18,0.96)',
         border: `1px solid ${borderColor}`,
         borderRadius: 10,
@@ -76,7 +70,7 @@ const TaskCard = ({ task }: { task: DownloadTask }) => {
         </span>
         {isActive && (
           <button
-            onClick={e => { e.stopPropagation(); cancelDownload(fileId); }}
+            onClick={() => cancelDownload(fileId)}
             style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.45)', fontSize: 11, padding: '0 0 0 8px', flexShrink: 0 }}
           >
             キャンセル
@@ -84,7 +78,7 @@ const TaskCard = ({ task }: { task: DownloadTask }) => {
         )}
         {isError && (
           <button
-            onClick={e => { e.stopPropagation(); dismissError(fileId); }}
+            onClick={() => dismissError(fileId)}
             aria-label="閉じる"
             style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.4)', padding: '0 0 0 8px', flexShrink: 0, display: 'flex', alignItems: 'center' }}
           >
@@ -111,33 +105,15 @@ const TaskCard = ({ task }: { task: DownloadTask }) => {
 
         <span style={{ fontSize: 11, color: isDone ? '#22c55e' : isError ? '#ef4444' : 'rgba(255,255,255,0.55)', flex: 1 }}>
           {PHASE_LABEL[phase] ?? phase}
-          {showBar && pct > 0 ? ` ${pct}%` : ''}
+          {phase === 'fetching' && pct > 0 ? ` ${pct}%` : ''}
           {isError && errorCode ? ` [${errorCode}]` : ''}
         </span>
-
-        {hasLogs && (
-          <span style={{ fontSize: 10, color: 'rgba(239,68,68,0.65)', flexShrink: 0 }}>
-            {logsOpen ? 'ログを隠す ▲' : 'ログを見る ▼'}
-          </span>
-        )}
       </div>
 
       {/* プログレスバー */}
-      {showBar && (
+      {phase === 'fetching' && (
         <div style={{ height: 3, background: 'rgba(255,255,255,0.1)', borderRadius: 2, marginTop: 7, overflow: 'hidden' }}>
           <div style={{ height: '100%', background: '#3b82f6', borderRadius: 2, width: `${pct}%`, transition: 'width 0.3s' }} />
-        </div>
-      )}
-
-      {/* ログビューア */}
-      {hasLogs && logsOpen && (
-        <div
-          onClick={e => e.stopPropagation()}
-          style={{ marginTop: 8, maxHeight: 200, overflowY: 'auto', background: 'rgba(0,0,0,0.55)', borderRadius: 6, padding: '6px 8px' }}
-        >
-          <pre style={{ fontSize: 9, color: 'rgba(255,255,255,0.65)', margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all', lineHeight: 1.5 }}>
-            {logs!.join('\n')}
-          </pre>
         </div>
       )}
 
