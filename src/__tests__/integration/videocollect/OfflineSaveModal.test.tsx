@@ -1,11 +1,10 @@
 // @vitest-environment jsdom
-import { render, screen, waitFor, cleanup } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, cleanup } from '@testing-library/react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { OfflineSaveModal } from '@/app/videocollect/modals/OfflineSaveModal';
 
-// offlineStorage と downloadQueue をモック
 vi.mock('@/app/videocollect/offlineStorage', () => ({
-  getOfflineStorageUsage: vi.fn().mockResolvedValue({ count: 0, totalBytes: 0 }),
+  getOfflineStorageUsage: vi.fn().mockResolvedValue({ count: 2, totalBytes: 500 * 1024 * 1024 }),
   getStorageLimitGb: vi.fn().mockReturnValue(5),
   checkQuota: vi.fn().mockResolvedValue('ok'),
 }));
@@ -13,12 +12,6 @@ vi.mock('@/app/videocollect/offlineStorage', () => ({
 vi.mock('@/app/videocollect/downloadQueue', () => ({
   startDownload: vi.fn(),
 }));
-
-// isWebCodecsSupported をモック
-vi.mock('@/app/videocollect/videoCompressor', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/app/videocollect/videoCompressor')>();
-  return { ...actual, isWebCodecsSupported: vi.fn() };
-});
 
 const defaultProps = {
   fileId: 'file1',
@@ -35,60 +28,52 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe('OfflineSaveModal — WebCodecs サポートチェック', () => {
-  it('WebCodecs 非対応時に high/medium/low ボタンが disabled になる', async () => {
-    const { isWebCodecsSupported } = await import('@/app/videocollect/videoCompressor');
-    vi.mocked(isWebCodecsSupported).mockResolvedValue(false);
-
+describe('OfflineSaveModal', () => {
+  it('ストレージ使用量とファイルサイズを表示する', async () => {
     render(<OfflineSaveModal {...defaultProps} />);
-
     await waitFor(() => {
-      const highBtn = screen.getByRole('button', { name: /高画質/ });
-      const midBtn  = screen.getByRole('button', { name: /中画質/ });
-      const lowBtn  = screen.getByRole('button', { name: /低画質/ });
-      expect(highBtn.hasAttribute('disabled')).toBe(true);
-      expect(midBtn.hasAttribute('disabled')).toBe(true);
-      expect(lowBtn.hasAttribute('disabled')).toBe(true);
+      expect(screen.getByText(/ストレージ使用量/)).toBeTruthy();
+      expect(screen.getByText(/ファイルサイズ/)).toBeTruthy();
     });
   });
 
-  it('WebCodecs 非対応時に original ボタンは disabled にならない', async () => {
-    const { isWebCodecsSupported } = await import('@/app/videocollect/videoCompressor');
-    vi.mocked(isWebCodecsSupported).mockResolvedValue(false);
+  it('保存ボタンが表示される', () => {
+    render(<OfflineSaveModal {...defaultProps} />);
+    expect(screen.getByRole('button', { name: /バックグラウンドで保存/ })).toBeTruthy();
+  });
 
+  it('保存ボタンを押すと startDownload が呼ばれてモーダルが閉じる', async () => {
+    const { startDownload } = await import('@/app/videocollect/downloadQueue');
     render(<OfflineSaveModal {...defaultProps} />);
 
+    await waitFor(() => screen.getByRole('button', { name: /バックグラウンドで保存/ }));
+    fireEvent.click(screen.getByRole('button', { name: /バックグラウンドで保存/ }));
+
     await waitFor(() => {
-      const origBtn = screen.getByRole('button', { name: /オリジナル/ });
-      expect(origBtn.hasAttribute('disabled')).toBe(false);
+      expect(startDownload).toHaveBeenCalledWith(expect.objectContaining({
+        fileId: 'file1',
+        fileName: 'test.mp4',
+        proxyUrl: 'https://proxy.example.com',
+        accessToken: 'token',
+        fileSizeBytes: 10000000,
+      }));
+      expect(defaultProps.onClose).toHaveBeenCalled();
     });
   });
 
-  it('WebCodecs 非対応時に警告文が表示される', async () => {
-    const { isWebCodecsSupported } = await import('@/app/videocollect/videoCompressor');
-    vi.mocked(isWebCodecsSupported).mockResolvedValue(false);
+  it('容量超過時は警告トーストを表示して startDownload を呼ばない', async () => {
+    const { checkQuota } = await import('@/app/videocollect/offlineStorage');
+    const { startDownload } = await import('@/app/videocollect/downloadQueue');
+    vi.mocked(checkQuota).mockResolvedValue('over-limit');
 
     render(<OfflineSaveModal {...defaultProps} />);
 
-    await waitFor(() => {
-      const warnings = screen.getAllByText(/iOS 16.4 以上が必要/);
-      expect(warnings.length).toBeGreaterThan(0);
-    });
-  });
-
-  it('WebCodecs 対応時は全ボタンが有効', async () => {
-    const { isWebCodecsSupported } = await import('@/app/videocollect/videoCompressor');
-    vi.mocked(isWebCodecsSupported).mockResolvedValue(true);
-
-    render(<OfflineSaveModal {...defaultProps} />);
+    await waitFor(() => screen.getByRole('button', { name: /バックグラウンドで保存/ }));
+    fireEvent.click(screen.getByRole('button', { name: /バックグラウンドで保存/ }));
 
     await waitFor(() => {
-      const highBtn = screen.getByRole('button', { name: /高画質/ });
-      const midBtn  = screen.getByRole('button', { name: /中画質/ });
-      const lowBtn  = screen.getByRole('button', { name: /低画質/ });
-      expect(highBtn.hasAttribute('disabled')).toBe(false);
-      expect(midBtn.hasAttribute('disabled')).toBe(false);
-      expect(lowBtn.hasAttribute('disabled')).toBe(false);
+      expect(defaultProps.addToast).toHaveBeenCalledWith(expect.stringContaining('超えます'), 'warning');
+      expect(startDownload).not.toHaveBeenCalled();
     });
   });
 });

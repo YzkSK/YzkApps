@@ -82,15 +82,7 @@ export const TimetableSettings = ({ addToast }: SettingsSectionProps) => {
   // notifyEnabled は localStorage から復元済みの初期値を参照するため deps 省略は意図的。
   useEffect(() => {
     if (!notifyEnabled || !('serviceWorker' in navigator)) return;
-    const params = new URLSearchParams({
-      apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-      authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-      projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-      storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-      messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-      appId: import.meta.env.VITE_FIREBASE_APP_ID,
-    });
-    navigator.serviceWorker.register(`/firebase-messaging-sw.js?${params}`)
+    navigator.serviceWorker.ready
       .then(async sw => {
         try {
           const token = await getToken(messaging, {
