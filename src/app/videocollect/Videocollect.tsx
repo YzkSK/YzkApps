@@ -30,7 +30,7 @@ import {
   renameFile,
   trashFile,
 } from './constants';
-import { listOfflineSavedIds, listOfflineEntries } from './offlineStorage';
+import { listOfflineSavedIds, listOfflineEntries, deleteOfflineVideo } from './offlineStorage';
 
 import { VideoGrid } from './views/VideoGrid';
 import { VideoList } from './views/VideoList';
@@ -69,7 +69,8 @@ type Modal =
   | { type: 'filter' }
   | { type: 'tag'; file: DriveFile }
   | { type: 'rename'; file: DriveFile }
-  | { type: 'delete'; file: DriveFile };
+  | { type: 'delete'; file: DriveFile }
+  | { type: 'offline-delete'; file: DriveFile };
 
 export const Videocollect = () => {
   const { currentUser } = useAuth();
@@ -285,6 +286,27 @@ export const Videocollect = () => {
     }
   };
 
+  const handleOfflineDelete = async (file: DriveFile) => {
+    try {
+      await deleteOfflineVideo(file.id);
+      setOfflineIds(prev => {
+        const next = new Set(prev);
+        next.delete(file.id);
+        return next;
+      });
+      setPageState(prev => {
+        if (prev.status !== 'offline') return prev;
+        const files = prev.files.filter(f => f.id !== file.id);
+        return files.length > 0 ? { ...prev, files } : { status: 'empty' };
+      });
+      setModal(null);
+      addToast('オフライン保存を削除しました', 'normal');
+    } catch (e) {
+      console.error('オフライン削除エラー:', e);
+      addToast(`削除に失敗しました [${VC_ERROR_CODES.OFFLINE_DELETE}]`, 'error');
+    }
+  };
+
   const vcHeader = (
     <header className="app-header">
       <div className="app-header-left">
@@ -454,6 +476,7 @@ export const Videocollect = () => {
             onTagEdit={file => setModal({ type: 'tag', file })}
             onRename={file => setModal({ type: 'rename', file })}
             onDelete={file => setModal({ type: 'delete', file })}
+            onOfflineDelete={file => setModal({ type: 'offline-delete', file })}
           />
         )}
         {(pageState.status === 'loaded' || pageState.status === 'offline') && filteredFiles.length > 0 && viewMode === 'list' && (
@@ -465,6 +488,7 @@ export const Videocollect = () => {
             onTagEdit={file => setModal({ type: 'tag', file })}
             onRename={file => setModal({ type: 'rename', file })}
             onDelete={file => setModal({ type: 'delete', file })}
+            onOfflineDelete={file => setModal({ type: 'offline-delete', file })}
           />
         )}
       </main>
@@ -518,6 +542,15 @@ export const Videocollect = () => {
         <DeleteModal
           file={modal.file}
           onDelete={() => handleDelete(modal.file)}
+          onClose={() => setModal(null)}
+        />
+      )}
+      {modal?.type === 'offline-delete' && (
+        <DeleteModal
+          file={modal.file}
+          description="のオフライン保存を端末から削除します。この操作は元に戻せません。"
+          confirmLabel="削除"
+          onDelete={() => handleOfflineDelete(modal.file)}
           onClose={() => setModal(null)}
         />
       )}

@@ -12,9 +12,10 @@ type Props = {
   onTagEdit: (file: DriveFile) => void;
   onRename: (file: DriveFile) => void;
   onDelete: (file: DriveFile) => void;
+  onOfflineDelete?: (file: DriveFile) => void;
 };
 
-export const VideoGrid = ({ files, tags, accessToken, playingId, previewingId, offlineIds, onPreviewChange, onTagEdit, onRename, onDelete }: Props) => (
+export const VideoGrid = ({ files, tags, accessToken, playingId, previewingId, offlineIds, onPreviewChange, onTagEdit, onRename, onDelete, onOfflineDelete }: Props) => (
   <div className="vc-grid">
     {files.map(file => (
       <VideoCard
@@ -29,6 +30,7 @@ export const VideoGrid = ({ files, tags, accessToken, playingId, previewingId, o
         onTagEdit={onTagEdit}
         onRename={onRename}
         onDelete={onDelete}
+        onOfflineDelete={onOfflineDelete}
       />
     ))}
   </div>

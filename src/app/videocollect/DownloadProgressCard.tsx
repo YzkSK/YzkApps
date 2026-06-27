@@ -23,8 +23,9 @@ export const DownloadProgressCard = () => {
 };
 
 const TaskCard = ({ task }: { task: DownloadTask }) => {
-  const { fileId, fileName, phase, progress, errorCode } = task;
+  const { fileId, fileName, phase, progress, errorCode, speed, chunks } = task;
   const touchStartX = useRef<number | null>(null);
+  const [showDetail, setShowDetail] = useState(false);
 
   const isActive = phase !== 'done' && phase !== 'error';
   const isDone   = phase === 'done';
@@ -46,6 +47,9 @@ const TaskCard = ({ task }: { task: DownloadTask }) => {
     : isError
     ? 'rgba(239,68,68,0.4)'
     : 'rgba(255,255,255,0.12)';
+
+  const formatSpeed = (mbps: number) =>
+    mbps >= 1 ? `${mbps.toFixed(1)} MB/s` : `${(mbps * 1024).toFixed(0)} KB/s`;
 
   return (
     <div
@@ -106,14 +110,50 @@ const TaskCard = ({ task }: { task: DownloadTask }) => {
         <span style={{ fontSize: 11, color: isDone ? '#22c55e' : isError ? '#ef4444' : 'rgba(255,255,255,0.55)', flex: 1 }}>
           {PHASE_LABEL[phase] ?? phase}
           {phase === 'fetching' && pct > 0 ? ` ${pct}%` : ''}
+          {phase === 'fetching' && speed != null ? ` · ${formatSpeed(speed)}` : ''}
           {isError && errorCode ? ` [${errorCode}]` : ''}
         </span>
+
+        {phase === 'fetching' && chunks && chunks.length > 0 && (
+          <button
+            onClick={() => setShowDetail(v => !v)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.35)', fontSize: 10, padding: '0 0 0 4px', flexShrink: 0 }}
+          >
+            {showDetail ? '▲' : '▼'}
+          </button>
+        )}
       </div>
 
       {/* プログレスバー */}
       {phase === 'fetching' && (
         <div style={{ height: 3, background: 'rgba(255,255,255,0.1)', borderRadius: 2, marginTop: 7, overflow: 'hidden' }}>
           <div style={{ height: '100%', background: '#3b82f6', borderRadius: 2, width: `${pct}%`, transition: 'width 0.3s' }} />
+        </div>
+      )}
+
+      {/* チャンク詳細 */}
+      {showDetail && chunks && chunks.length > 0 && (
+        <div style={{ marginTop: 8 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
+            {chunks.map(c => {
+              const chunkPct = c.total > 0 ? Math.round((c.received / c.total) * 100) : 0;
+              const bg = c.status === 'done'
+                ? '#22c55e'
+                : c.status === 'downloading'
+                ? `linear-gradient(to right, #3b82f6 ${chunkPct}%, rgba(255,255,255,0.1) ${chunkPct}%)`
+                : 'rgba(255,255,255,0.1)';
+              return (
+                <div
+                  key={c.index}
+                  title={`チャンク ${c.index + 1}: ${chunkPct}%`}
+                  style={{ width: 10, height: 10, borderRadius: 2, background: bg }}
+                />
+              );
+            })}
+          </div>
+          <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', margin: '4px 0 0' }}>
+            {`${Math.round(chunks[0]?.total / (1024 * 1024))} MB × ${chunks.length} チャンク`}
+          </p>
         </div>
       )}
 

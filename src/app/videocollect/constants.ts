@@ -122,6 +122,7 @@ export const VC_ERROR_CODES = {
   OFFLINE_SAVE: 'E029',
   OFFLINE_LOAD: 'E030',
   NONCE_FETCH: 'E032',
+  OFFLINE_DELETE: 'E034',
 } as const;
 
 export const DRIVE_SCOPES = [

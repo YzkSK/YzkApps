@@ -7,9 +7,11 @@ type Props = {
   file: DriveFile;
   onDelete: () => Promise<void>;
   onClose: () => void;
+  description?: string;
+  confirmLabel?: string;
 };
 
-export const DeleteModal = ({ file, onDelete, onClose }: Props) => {
+export const DeleteModal = ({ file, onDelete, onClose, description, confirmLabel }: Props) => {
   const [loading, setLoading] = useState(false);
 
   const handleDelete = async () => {
@@ -29,7 +31,7 @@ export const DeleteModal = ({ file, onDelete, onClose }: Props) => {
         </DialogHeader>
         <p style={{ fontSize: 13, color: 'var(--vc-text-secondary)', margin: 0 }}>
           <strong style={{ color: 'var(--app-text)', fontWeight: 600 }}>{file.name}</strong><br />
-          をゴミ箱に移動します。この操作は Google Drive のゴミ箱から元に戻せます。
+          {description ?? 'をゴミ箱に移動します。この操作は Google Drive のゴミ箱から元に戻せます。'}
         </p>
         <div className="flex gap-2 mt-2">
           <Button variant="outline" className="flex-1" onClick={onClose} disabled={loading}>
@@ -42,7 +44,7 @@ export const DeleteModal = ({ file, onDelete, onClose }: Props) => {
             onClick={handleDelete}
             disabled={loading}
           >
-            {loading ? '削除中…' : 'ゴミ箱に移動'}
+            {loading ? '削除中…' : (confirmLabel ?? 'ゴミ箱に移動')}
           </Button>
         </div>
       </DialogContent>
