@@ -120,7 +120,8 @@ function jsonError(cors: Record<string, string>, msg: string, status: number): R
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
 // nonce → { uid, accessToken } のマッピングを NONCE_KV に保存する TTL（秒）
-const NONCE_TTL_SECONDS = 300;
+// 動画再生セッション中にレンジリクエストが失敗しないよう 2 時間に設定する
+const NONCE_TTL_SECONDS = 7200;
 
 /**
  * POST /nonce: idToken を検証し、短命 nonce を発行する。
