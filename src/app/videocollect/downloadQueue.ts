@@ -64,6 +64,7 @@ if ('serviceWorker' in navigator) {
     const data = event.data as { type?: string; fileId?: string; fileName?: string } | null;
     if (!data?.type || !data?.fileId) return;
     const { fileId } = data;
+    console.info('[downloadQueue] SW message', { type: data.type, fileId, taskExists: tasks.has(fileId) });
 
     if (data.type === 'vc-bgfetch-done') {
       bgFetchRegs.delete(fileId);
@@ -92,6 +93,13 @@ export function startDownload(opts: {
   fileSizeBytes?: number;
 }): void {
   if (tasks.has(opts.fileId)) return;
+  console.info('[downloadQueue] startDownload', {
+    fileId: opts.fileId,
+    fileName: opts.fileName,
+    fileSizeBytes: opts.fileSizeBytes ?? 0,
+    hasToken: Boolean(opts.accessToken),
+    proxyUrl: opts.proxyUrl,
+  });
   tasks.set(opts.fileId, { fileId: opts.fileId, fileName: opts.fileName, phase: 'fetching', progress: 0 });
   notify();
 
@@ -155,8 +163,12 @@ function launchWithBgFetch(opts: {
 }): void {
   (async () => {
     if ('serviceWorker' in navigator) {
-      const started = await tryStartBgFetch(opts).catch(() => false);
+      const started = await tryStartBgFetch(opts).catch((e) => {
+        console.error('[downloadQueue] tryStartBgFetch threw', e);
+        return false;
+      });
       if (started) return;
+      console.warn('[downloadQueue] BgFetch unavailable/failed — falling back to in-page download', { fileId: opts.fileId });
     }
     const controller = new AbortController();
     abortControllers.set(opts.fileId, controller);
@@ -178,7 +190,10 @@ async function tryStartBgFetch(opts: {
 }): Promise<boolean> {
   const { fileId, fileName, proxyUrl, accessToken, fileSizeBytes = 0 } = opts;
   const sw = await navigator.serviceWorker.ready;
-  if (!('backgroundFetch' in sw)) return false;
+  if (!('backgroundFetch' in sw)) {
+    console.warn('[downloadQueue] Background Fetch API not supported', { fileId });
+    return false;
+  }
 
   const bgFetchApi = (sw as unknown as { backgroundFetch: BgFetchManager }).backgroundFetch;
   const bgFetchId  = `vc-bg-${fileId}`;
@@ -198,9 +213,16 @@ async function tryStartBgFetch(opts: {
     { title: fileName, ...(fileSizeBytes > 0 ? { downloadTotal: fileSizeBytes } : {}) },
   );
 
+  console.info('[downloadQueue] BgFetch started', { bgFetchId, fileId, fileSizeBytes, streamUrl });
   bgFetchRegs.set(fileId, bgFetch);
 
   bgFetch.addEventListener('progress', () => {
+    console.info('[downloadQueue] BgFetch progress', {
+      fileId,
+      result: bgFetch.result,
+      downloaded: bgFetch.downloaded,
+      downloadTotal: bgFetch.downloadTotal,
+    });
     if (bgFetch.result === 'success') {
       bgFetchRegs.delete(fileId);
       patch(fileId, { phase: 'done', progress: 1 });
@@ -232,21 +254,33 @@ async function runInPage(opts: {
   const { fileId, fileName, proxyUrl, accessToken, fileSizeBytes, signal } = opts;
   const streamUrl = `${proxyUrl}/stream/${encodeURIComponent(fileId)}?token=${encodeURIComponent(accessToken)}`;
 
+  console.info('[downloadQueue] runInPage start', { fileId, fileSizeBytes: fileSizeBytes ?? 0 });
   try {
     // ファイルサイズを確認（既知なら HEAD を省略）
     let total = fileSizeBytes ?? 0;
     let contentType = 'video/mp4';
     if (total === 0) {
+      console.info('[downloadQueue] runInPage: fileSizeBytes unknown, sending HEAD', { fileId });
       const head = await fetch(streamUrl, { method: 'HEAD', signal });
       total = parseInt(head.headers.get('Content-Length') ?? '0', 10);
       if (head.headers.get('Content-Type')) contentType = head.headers.get('Content-Type')!;
+      console.info('[downloadQueue] runInPage: HEAD result', {
+        fileId, status: head.status, total, contentType,
+        acceptRanges: head.headers.get('Accept-Ranges'),
+      });
     }
 
     // サイズ不明またはサーバーが Range 非対応 → シングルストリームにフォールバック
     if (total === 0) {
+      console.warn('[downloadQueue] runInPage: Content-Length unknown — falling back to single stream', { fileId });
       await runInPageStream({ fileId, fileName, streamUrl, contentType, signal });
       return;
     }
+
+    console.info('[downloadQueue] runInPage: starting parallel chunks', {
+      fileId, total, chunkSize: CHUNK_SIZE, maxParallel: MAX_PARALLEL,
+      chunkCount: Math.ceil(total / CHUNK_SIZE),
+    });
 
     // チャンク境界を計算
     const ranges: Array<[number, number]> = [];
@@ -256,7 +290,6 @@ async function runInPage(opts: {
 
     const chunkCount = ranges.length;
     const results = new Array<Uint8Array[]>(chunkCount);
-    const received = new Array<number>(chunkCount).fill(0);
 
     // セマフォで同時接続数を MAX_PARALLEL に制限
     let active = 0;
@@ -268,13 +301,13 @@ async function runInPage(opts: {
         while (active < MAX_PARALLEL && nextIdx < chunkCount) {
           const idx = nextIdx++;
           active++;
-          fetchChunk(streamUrl, ranges[idx], signal)
-            .then(({ chunks, bytes, type }) => {
+          fetchChunk(streamUrl, ranges[idx], signal, (bytes) => {
+            totalReceived += bytes;
+            patch(fileId, { phase: 'fetching', progress: Math.min(totalReceived / total, 0.99) });
+          })
+            .then(({ chunks, type }) => {
               if (type && !contentType.startsWith('video')) contentType = type;
               results[idx] = chunks;
-              totalReceived += bytes - received[idx];
-              received[idx] = bytes;
-              patch(fileId, { phase: 'fetching', progress: totalReceived / total });
               active--;
               if (nextIdx < chunkCount) {
                 tryNext();
@@ -292,10 +325,12 @@ async function runInPage(opts: {
 
     if (signal.aborted) return;
 
+    console.info('[downloadQueue] runInPage: all chunks done, saving blob', { fileId });
     patch(fileId, { phase: 'saving', progress: 1 });
     const blob = new Blob(results.flat(), { type: contentType });
     await saveOfflineVideo(fileId, fileName, blob);
 
+    console.info('[downloadQueue] runInPage: saved', { fileId, blobSize: blob.size });
     abortControllers.delete(fileId);
     patch(fileId, { phase: 'done', progress: 1 });
     setTimeout(() => { tasks.delete(fileId); notify(); }, 4000);
@@ -310,7 +345,8 @@ async function fetchChunk(
   url: string,
   [start, end]: [number, number],
   signal: AbortSignal,
-): Promise<{ chunks: Uint8Array[]; bytes: number; type: string | null }> {
+  onProgress?: (bytes: number) => void,
+): Promise<{ chunks: Uint8Array[]; type: string | null }> {
   const resp = await fetch(url, {
     headers: { Range: `bytes=${start}-${end}` },
     signal,
@@ -320,14 +356,13 @@ async function fetchChunk(
   const reader = resp.body?.getReader();
   if (!reader) throw new Error('no body');
   const chunks: Uint8Array[] = [];
-  let bytes = 0;
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
     chunks.push(value);
-    bytes += value.length;
+    onProgress?.(value.length);
   }
-  return { chunks, bytes, type: resp.headers.get('Content-Type') };
+  return { chunks, type: resp.headers.get('Content-Type') };
 }
 
 // ファイルサイズ不明時のフォールバック（シングルストリーム）
@@ -342,6 +377,8 @@ async function runInPageStream(opts: {
   const resp = await fetch(streamUrl, { headers: { Range: 'bytes=0-' }, signal });
   if (!resp.ok && resp.status !== 206) throw new Error(`fetch: ${resp.status}`);
 
+  const total = parseInt(resp.headers.get('Content-Length') ?? '0', 10);
+  let received = 0;
   const reader = resp.body?.getReader();
   if (!reader) throw new Error('no body');
   const chunks: Uint8Array[] = [];
@@ -349,6 +386,10 @@ async function runInPageStream(opts: {
     const { done, value } = await reader.read();
     if (done) break;
     chunks.push(value);
+    if (total > 0) {
+      received += value.length;
+      patch(fileId, { phase: 'fetching', progress: Math.min(received / total, 0.99) });
+    }
   }
 
   if (signal.aborted) { cleanup(fileId); return; }

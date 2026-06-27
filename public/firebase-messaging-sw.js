@@ -107,7 +107,10 @@ self.addEventListener('backgroundfetchsuccess', (event) => {
   event.waitUntil((async () => {
     console.info('[SW] backgroundfetchsuccess', { id: reg.id });
     const meta = await getBgMeta(reg.id);
-    if (!meta) return;
+    if (!meta) {
+      console.error('[SW] backgroundfetchsuccess: meta not found in cache — cannot notify page', { id: reg.id });
+      return;
+    }
     try {
       const records  = await reg.matchAll();
       console.info('[SW] backgroundfetchsuccess records', {
@@ -170,7 +173,10 @@ self.addEventListener('backgroundfetchfail', (event) => {
   event.waitUntil((async () => {
     console.error('[SW] backgroundfetchfail', { id: event.registration.id });
     const meta = await getBgMeta(event.registration.id);
-    if (!meta) return;
+    if (!meta) {
+      console.error('[SW] backgroundfetchfail: meta not found — cannot notify page', { id: event.registration.id });
+      return;
+    }
     await deleteBgMeta(event.registration.id);
     await notifyAllClients({ type: 'vc-bgfetch-fail', fileId: meta.fileId });
   })());
