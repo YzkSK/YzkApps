@@ -204,44 +204,46 @@ export const VideoCard = ({ file, tags, accessToken, isPreviewing, isPlaying, is
           {tags.map(tag => (
             <span key={tag} className="vc-tag">{tag}</span>
           ))}
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: 2, flexShrink: 0 }}>
-            <button
-              className="vc-icon-btn"
-              onClick={e => { e.stopPropagation(); onRename(file); }}
-              aria-label="ファイル名を変更"
-              title="ファイル名を変更"
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-              </svg>
-            </button>
-            <button
-              className="vc-icon-btn"
-              onClick={e => { e.stopPropagation(); onDelete(file); }}
-              aria-label="削除"
-              title="ゴミ箱に移動"
-              style={{ color: '#ef4444' }}
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <polyline points="3 6 5 6 21 6" />
-                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                <path d="M10 11v6M14 11v6" />
-                <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-              </svg>
-            </button>
-            <button
-              className="vc-icon-btn vc-tag-edit-btn"
-              onClick={e => { e.stopPropagation(); onTagEdit(file); }}
-              aria-label="タグを編集"
-              title="タグを編集"
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
-                <line x1="7" y1="7" x2="7.01" y2="7" />
-              </svg>
-            </button>
-          </div>
+          {!isOffline && (
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: 2, flexShrink: 0 }}>
+              <button
+                className="vc-icon-btn"
+                onClick={e => { e.stopPropagation(); onRename(file); }}
+                aria-label="ファイル名を変更"
+                title="ファイル名を変更"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                </svg>
+              </button>
+              <button
+                className="vc-icon-btn"
+                onClick={e => { e.stopPropagation(); onDelete(file); }}
+                aria-label="削除"
+                title="ゴミ箱に移動"
+                style={{ color: '#ef4444' }}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polyline points="3 6 5 6 21 6" />
+                  <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                  <path d="M10 11v6M14 11v6" />
+                  <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                </svg>
+              </button>
+              <button
+                className="vc-icon-btn vc-tag-edit-btn"
+                onClick={e => { e.stopPropagation(); onTagEdit(file); }}
+                aria-label="タグを編集"
+                title="タグを編集"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+                  <line x1="7" y1="7" x2="7.01" y2="7" />
+                </svg>
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
