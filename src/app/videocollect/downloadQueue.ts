@@ -35,9 +35,12 @@ interface BgFetchManager {
   get(id: string): Promise<BgFetchRegistration | undefined>;
 }
 
+type DownloadOpts = { fileId: string; fileName: string; proxyUrl: string; accessToken: string; fileSizeBytes?: number };
+
 const tasks            = new Map<string, DownloadTask>();
 const abortControllers = new Map<string, AbortController>();
 const bgFetchRegs      = new Map<string, BgFetchRegistration>();
+const downloadOpts     = new Map<string, DownloadOpts>();
 const listeners        = new Set<() => void>();
 
 function notify(): void {
@@ -68,6 +71,7 @@ if ('serviceWorker' in navigator) {
 
     if (data.type === 'vc-bgfetch-done') {
       bgFetchRegs.delete(fileId);
+      downloadOpts.delete(fileId);
       if (tasks.has(fileId)) {
         abortControllers.delete(fileId);
         patch(fileId, { phase: 'done', progress: 1 });
@@ -75,7 +79,18 @@ if ('serviceWorker' in navigator) {
       }
     } else if (data.type === 'vc-bgfetch-fail') {
       bgFetchRegs.delete(fileId);
-      if (tasks.has(fileId)) {
+      const opts = downloadOpts.get(fileId);
+      if (tasks.has(fileId) && opts) {
+        // BgFetch 失敗 → in-page ダウンロードにフォールバック
+        console.warn('[downloadQueue] BgFetch failed, falling back to in-page download', { fileId });
+        patch(fileId, { phase: 'fetching', progress: 0 });
+        const controller = new AbortController();
+        abortControllers.set(fileId, controller);
+        runInPage({ ...opts, signal: controller.signal }).catch(e => {
+          console.error('[downloadQueue] in-page fallback error', e);
+          if (tasks.has(fileId)) setError(fileId, VC_ERROR_CODES.OFFLINE_SAVE);
+        });
+      } else if (tasks.has(fileId)) {
         abortControllers.delete(fileId);
         patch(fileId, { phase: 'error', progress: 0, errorCode: VC_ERROR_CODES.OFFLINE_SAVE });
       }
@@ -101,6 +116,7 @@ export function startDownload(opts: {
     proxyUrl: opts.proxyUrl,
   });
   tasks.set(opts.fileId, { fileId: opts.fileId, fileName: opts.fileName, phase: 'fetching', progress: 0 });
+  downloadOpts.set(opts.fileId, opts);
   notify();
 
   acquireWakeLock().catch(() => {});
@@ -115,6 +131,7 @@ export function cancelDownload(fileId: string): void {
   }
   abortControllers.get(fileId)?.abort();
   abortControllers.delete(fileId);
+  downloadOpts.delete(fileId);
   tasks.delete(fileId);
   notify();
 }
@@ -139,6 +156,7 @@ function patch(fileId: string, changes: Partial<DownloadTask>): void {
 function cleanup(fileId: string): void {
   abortControllers.delete(fileId);
   bgFetchRegs.delete(fileId);
+  downloadOpts.delete(fileId);
   tasks.delete(fileId);
   notify();
   const hasActive = Array.from(tasks.values()).some(t => t.phase === 'fetching' || t.phase === 'saving');
@@ -149,6 +167,7 @@ function cleanup(fileId: string): void {
 
 function setError(fileId: string, errorCode: string): void {
   abortControllers.delete(fileId);
+  downloadOpts.delete(fileId);
   patch(fileId, { phase: 'error', progress: 0, errorCode });
 }
 
