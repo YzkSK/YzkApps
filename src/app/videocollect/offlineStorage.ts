@@ -3,13 +3,21 @@ const STORE_NAME = 'videos';
 const STORAGE_LIMIT_KEY = 'vc-offline-limit-gb';
 const DEFAULT_LIMIT_GB = 5;
 
-
 type OfflineEntry = {
   fileId: string;
   fileName: string;
   blob: Blob;
   savedAt: number;
   size: number;
+  thumbnailLink?: string;
+};
+
+export type OfflineMeta = {
+  fileId: string;
+  fileName: string;
+  savedAt: number;
+  size: number;
+  thumbnailLink?: string;
 };
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -34,10 +42,11 @@ export async function saveOfflineVideo(
   fileId: string,
   fileName: string,
   blob: Blob,
+  thumbnailLink?: string,
 ): Promise<void> {
   const db = await openOfflineDb();
   return new Promise((resolve, reject) => {
-    const entry: OfflineEntry = { fileId, fileName, blob, savedAt: Date.now(), size: blob.size };
+    const entry: OfflineEntry = { fileId, fileName, blob, savedAt: Date.now(), size: blob.size, thumbnailLink };
     const tx = db.transaction(STORE_NAME, 'readwrite');
     const req = tx.objectStore(STORE_NAME).put(entry);
     req.onsuccess = () => resolve();
@@ -68,6 +77,20 @@ export async function listOfflineSavedIds(): Promise<string[]> {
   return new Promise((resolve, reject) => {
     const req = db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).getAllKeys();
     req.onsuccess = () => resolve(req.result as string[]);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function listOfflineEntries(): Promise<OfflineMeta[]> {
+  const db = await openOfflineDb();
+  return new Promise((resolve, reject) => {
+    const req = db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).getAll();
+    req.onsuccess = () => {
+      const entries = req.result as OfflineEntry[];
+      resolve(entries.map(({ fileId, fileName, savedAt, size, thumbnailLink }) => ({
+        fileId, fileName, savedAt, size, thumbnailLink,
+      })));
+    };
     req.onerror = () => reject(req.error);
   });
 }
@@ -111,4 +134,3 @@ export async function checkQuota(newBytes: number): Promise<'ok' | 'over-limit'>
   const limitBytes = getStorageLimitGb() * 1024 * 1024 * 1024;
   return totalBytes + newBytes <= limitBytes ? 'ok' : 'over-limit';
 }
-

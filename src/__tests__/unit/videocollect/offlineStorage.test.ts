@@ -59,6 +59,7 @@ const {
   getStorageLimitGb,
   setStorageLimitGb,
   checkQuota,
+  listOfflineEntries,   // 追加
 } = await import('@/app/videocollect/offlineStorage');
 
 describe('offlineStorage', () => {
@@ -94,6 +95,22 @@ describe('offlineStorage', () => {
     it('存在しない ID は null を返す', async () => {
       const loaded = await loadOfflineVideo('nonexistent');
       expect(loaded).toBeNull();
+    });
+
+    it('thumbnailLink を保存・復元できる', async () => {
+      const blob = new Blob(['test'], { type: 'video/mp4' });
+      await saveOfflineVideo('file-thumb', 'thumb.mp4', blob, 'https://example.com/thumb.jpg');
+      const entries = await listOfflineEntries();
+      const entry = entries.find(e => e.fileId === 'file-thumb');
+      expect(entry?.thumbnailLink).toBe('https://example.com/thumb.jpg');
+    });
+
+    it('thumbnailLink なしで保存した場合は undefined になる', async () => {
+      const blob = new Blob(['test2'], { type: 'video/mp4' });
+      await saveOfflineVideo('file-no-thumb', 'no-thumb.mp4', blob);
+      const entries = await listOfflineEntries();
+      const entry = entries.find(e => e.fileId === 'file-no-thumb');
+      expect(entry?.thumbnailLink).toBeUndefined();
     });
   });
 
@@ -158,6 +175,24 @@ describe('offlineStorage', () => {
       setStorageLimitGb(1);
       const result = await checkQuota(1024 * 1024 * 1024 + 1);
       expect(result).toBe('over-limit');
+    });
+  });
+
+  describe('listOfflineEntries', () => {
+    it('blob を含まないメタデータ一覧を返す', async () => {
+      const b1 = new Blob(['a'], { type: 'video/mp4' });
+      const b2 = new Blob(['b'], { type: 'video/mp4' });
+      await saveOfflineVideo('meta-a', 'a.mp4', b1, 'https://example.com/a.jpg');
+      await saveOfflineVideo('meta-b', 'b.mp4', b2);
+      const entries = await listOfflineEntries();
+      const a = entries.find(e => e.fileId === 'meta-a');
+      const b = entries.find(e => e.fileId === 'meta-b');
+      expect(a?.fileName).toBe('a.mp4');
+      expect(a?.thumbnailLink).toBe('https://example.com/a.jpg');
+      expect(b?.fileName).toBe('b.mp4');
+      expect(b?.thumbnailLink).toBeUndefined();
+      // blob は含まれない
+      expect((a as unknown as { blob?: unknown })?.blob).toBeUndefined();
     });
   });
 });
