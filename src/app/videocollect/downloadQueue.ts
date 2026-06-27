@@ -187,20 +187,23 @@ async function runInPage(opts: {
     }));
     patch(fileId, { chunks: [...chunkStates] });
 
-    // セマフォで同時接続数を MAX_PARALLEL に制限
-    let active = 0;
+    // MAX_PARALLEL 本の worker が各自チャンクを取り合いながら並列ダウンロード
     let nextIdx = 0;
     let totalReceived = 0;
     const startTime = Date.now();
 
-    await new Promise<void>((resolve, reject) => {
-      const tryNext = () => {
-        while (active < MAX_PARALLEL && nextIdx < chunkCount) {
-          const idx = nextIdx++;
-          active++;
-          chunkStates[idx].status = 'downloading';
-          patch(fileId, { chunks: [...chunkStates] });
-          fetchChunk(streamUrl, ranges[idx], signal, (bytes) => {
+    const workers = Array.from({ length: Math.min(MAX_PARALLEL, chunkCount) }, async () => {
+      let idx: number;
+      while ((idx = nextIdx++) < chunkCount) {
+        if (signal.aborted) return;
+        chunkStates[idx].status = 'downloading';
+        patch(fileId, { chunks: [...chunkStates] });
+
+        const { chunks: chunkData, type } = await fetchChunk(
+          streamUrl,
+          ranges[idx],
+          signal,
+          (bytes) => {
             totalReceived += bytes;
             chunkStates[idx].received += bytes;
             const elapsedSec = (Date.now() - startTime) / 1000;
@@ -211,26 +214,18 @@ async function runInPage(opts: {
               speed,
               chunks: [...chunkStates],
             });
-          })
-            .then(({ chunks, type }) => {
-              if (type && !contentType.startsWith('video')) contentType = type;
-              results[idx] = chunks;
-              chunkStates[idx].status = 'done';
-              chunkStates[idx].received = chunkStates[idx].total;
-              active--;
-              if (nextIdx < chunkCount) {
-                tryNext();
-              } else if (active === 0) {
-                resolve();
-              }
-            })
-            .catch(e => {
-              if (signal.aborted) { cleanup(fileId); resolve(); } else reject(e);
-            });
-        }
-      };
-      tryNext();
+          },
+        );
+
+        if (type && !contentType.startsWith('video')) contentType = type;
+        results[idx] = chunkData;
+        chunkStates[idx].status = 'done';
+        chunkStates[idx].received = chunkStates[idx].total;
+        patch(fileId, { chunks: [...chunkStates] });
+      }
     });
+
+    await Promise.all(workers);
 
     if (signal.aborted) return;
 
