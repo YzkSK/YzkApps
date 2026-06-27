@@ -14,6 +14,7 @@ export type DownloadTask = {
   phase: DownloadPhase;
   progress: number;
   errorCode?: string;
+  thumbnailLink?: string;
 };
 
 const tasks            = new Map<string, DownloadTask>();
@@ -46,9 +47,10 @@ export function startDownload(opts: {
   proxyUrl: string;
   accessToken: string;
   fileSizeBytes?: number;
+  thumbnailLink?: string;
 }): void {
   if (tasks.has(opts.fileId)) return;
-  tasks.set(opts.fileId, { fileId: opts.fileId, fileName: opts.fileName, phase: 'fetching', progress: 0 });
+  tasks.set(opts.fileId, { fileId: opts.fileId, fileName: opts.fileName, phase: 'fetching', progress: 0, thumbnailLink: opts.thumbnailLink });
   notify();
 
   acquireWakeLock().catch(() => {});
@@ -100,6 +102,7 @@ function launchDownload(opts: {
   proxyUrl: string;
   accessToken: string;
   fileSizeBytes?: number;
+  thumbnailLink?: string;
 }): void {
   (async () => {
     const controller = new AbortController();
@@ -123,6 +126,7 @@ async function runInPage(opts: {
   accessToken: string;
   fileSizeBytes?: number;
   signal: AbortSignal;
+  thumbnailLink?: string;
 }): Promise<void> {
   const { fileId, fileName, proxyUrl, accessToken, fileSizeBytes, signal } = opts;
   const streamUrl = `${proxyUrl}/stream/${encodeURIComponent(fileId)}?token=${encodeURIComponent(accessToken)}`;
@@ -146,7 +150,7 @@ async function runInPage(opts: {
     // サイズ不明またはサーバーが Range 非対応 → シングルストリームにフォールバック
     if (total === 0) {
       console.warn('[downloadQueue] runInPage: Content-Length unknown — falling back to single stream', { fileId });
-      await runInPageStream({ fileId, fileName, streamUrl, contentType, signal });
+      await runInPageStream({ fileId, fileName, streamUrl, contentType, signal, thumbnailLink: opts.thumbnailLink });
       return;
     }
 
@@ -201,7 +205,7 @@ async function runInPage(opts: {
     console.info('[downloadQueue] runInPage: all chunks done, saving blob', { fileId });
     patch(fileId, { phase: 'saving', progress: 1 });
     const blob = new Blob(results.flat(), { type: contentType });
-    await saveOfflineVideo(fileId, fileName, blob);
+    await saveOfflineVideo(fileId, fileName, blob, opts.thumbnailLink);
 
     console.info('[downloadQueue] runInPage: saved', { fileId, blobSize: blob.size });
     abortControllers.delete(fileId);
@@ -245,8 +249,9 @@ async function runInPageStream(opts: {
   streamUrl: string;
   contentType: string;
   signal: AbortSignal;
+  thumbnailLink?: string;
 }): Promise<void> {
-  const { fileId, fileName, streamUrl, contentType, signal } = opts;
+  const { fileId, fileName, streamUrl, contentType, signal, thumbnailLink } = opts;
   const resp = await fetch(streamUrl, { headers: { Range: 'bytes=0-' }, signal });
   if (!resp.ok && resp.status !== 206) throw new Error(`fetch: ${resp.status}`);
 
@@ -268,7 +273,7 @@ async function runInPageStream(opts: {
   if (signal.aborted) { cleanup(fileId); return; }
 
   patch(fileId, { phase: 'saving', progress: 1 });
-  await saveOfflineVideo(fileId, fileName, new Blob(chunks, { type: resp.headers.get('Content-Type') ?? contentType }));
+  await saveOfflineVideo(fileId, fileName, new Blob(chunks, { type: resp.headers.get('Content-Type') ?? contentType }), thumbnailLink);
 
   abortControllers.delete(fileId);
   patch(fileId, { phase: 'done', progress: 1 });

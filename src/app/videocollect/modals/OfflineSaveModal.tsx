@@ -9,6 +9,7 @@ type Props = {
   fileSize: string;
   proxyUrl: string;
   accessToken: string;
+  thumbnailLink?: string;
   onClose: () => void;
   addToast: (msg: string, type: 'normal' | 'error' | 'warning') => void;
 };
@@ -19,6 +20,7 @@ export const OfflineSaveModal = ({
   fileSize,
   proxyUrl,
   accessToken,
+  thumbnailLink,
   onClose,
   addToast,
 }: Props) => {
@@ -40,7 +42,7 @@ export const OfflineSaveModal = ({
       addToast(`保存上限（${limitGb} GB）を超えます。上限を増やすか既存の動画を削除してください。`, 'warning');
       return;
     }
-    startDownload({ fileId, fileName, proxyUrl, accessToken, fileSizeBytes });
+    startDownload({ fileId, fileName, proxyUrl, accessToken, fileSizeBytes, thumbnailLink });
     onClose();
   };
 

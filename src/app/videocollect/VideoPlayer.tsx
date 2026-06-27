@@ -70,6 +70,7 @@ export const VideoPlayer = () => {
   const [offlineBlobUrl, setOfflineBlobUrl] = useState<string | null>(null);
   const [showOfflineSaveModal, setShowOfflineSaveModal] = useState(false);
   const [fileSize, setFileSize] = useState('0');
+  const [thumbnailLink, setThumbnailLink] = useState<string | undefined>(undefined);
   const [autoplayNext, setAutoplayNext] = useState(() => localStorage.getItem('vc-autoplay-next') === 'true');
   const [autoplayCountdown, setAutoplayCountdown] = useState<number | null>(null);
   const [nextupFile, setNextupFile] = useState<DriveFile | null>(null);
@@ -267,6 +268,9 @@ export const VideoPlayer = () => {
         if (file && file.size) {
           setFileSize(file.size);
           console.info('[VideoPlayer] fileSize updated', { fileId, size: file.size });
+        }
+        if (file && file.thumbnailLink) {
+          setThumbnailLink(file.thumbnailLink);
         }
       })
       .catch(e => console.error('[VideoPlayer] failed to fetch file metadata', e));
@@ -1253,6 +1257,7 @@ export const VideoPlayer = () => {
           fileSize={fileSize}
           proxyUrl={proxyUrl}
           accessToken={videoNonce}
+          thumbnailLink={thumbnailLink}
           onClose={() => setShowOfflineSaveModal(false)}
           addToast={addToast}
         />
