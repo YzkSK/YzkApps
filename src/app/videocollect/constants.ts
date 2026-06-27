@@ -121,7 +121,6 @@ export const VC_ERROR_CODES = {
   DELETE: 'E028',
   OFFLINE_SAVE: 'E029',
   OFFLINE_LOAD: 'E030',
-  COMPRESS: 'E031',
   NONCE_FETCH: 'E032',
 } as const;
 

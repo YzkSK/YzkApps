@@ -76,18 +76,3 @@ export async function releaseWakeLock(): Promise<void> {
 export function isWakeLockActive(): boolean {
   return isActive;
 }
-
-/**
- * 簡易的に低メモリ・モバイル端末を判定するユーティリティ
- */
-export function isConstrainedDevice(): boolean {
-  try {
-    const ua = navigator.userAgent || '';
-    const isMobile = /Mobi|Android|iPhone|iPad|iPod/.test(ua) || (navigator.maxTouchPoints ?? 0) > 0;
-    const deviceMemory = (navigator as any).deviceMemory ?? 4;
-    const hwConcurrency = (navigator as any).hardwareConcurrency ?? 4;
-    return isMobile && (deviceMemory <= 2 || hwConcurrency <= 2);
-  } catch {
-    return false;
-  }
-}
