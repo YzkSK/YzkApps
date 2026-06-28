@@ -161,38 +161,73 @@ async function handleNonce(
   return json(cors, { nonce });
 }
 
+// ── nonce インメモリキャッシュ ──────────────────────────────────────────────────
+// 同一 Worker isolate 内で複数の Range リクエストが来る際に KV ラウンドトリップを省く。
+// isolate は通常 30 秒前後再利用されるため、動画再生中の連続リクエストに有効。
+const nonceMemCache = new Map<string, { accessToken: string; expiresAt: number }>();
+
+async function resolveNonce(nonce: string, kv: KVNamespace): Promise<string | null> {
+  const now = Date.now();
+  const hit = nonceMemCache.get(nonce);
+  if (hit && hit.expiresAt > now) return hit.accessToken;
+
+  // 肥大化防止: 期限切れエントリを掃除
+  if (nonceMemCache.size > 200) {
+    for (const [k, v] of nonceMemCache) {
+      if (v.expiresAt <= now) nonceMemCache.delete(k);
+    }
+  }
+
+  const raw = await kv.get(nonce);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as { accessToken?: string };
+    if (!parsed.accessToken) return null;
+    nonceMemCache.set(nonce, { accessToken: parsed.accessToken, expiresAt: now + 60_000 });
+    return parsed.accessToken;
+  } catch {
+    return null;
+  }
+}
+
 async function handleStream(
   request: Request,
   env: Env,
   cors: Record<string, string>,
   fileId: string,
+  ctx: ExecutionContext,
 ): Promise<Response> {
   const url = new URL(request.url);
   const nonce = url.searchParams.get('token');
   if (!nonce) return jsonError(cors, 'Unauthorized', 401);
 
-  // NONCE_KV から nonce を検証してアクセストークンを取得
-  const nonceData = await env.NONCE_KV.get(nonce);
-  if (!nonceData) return jsonError(cors, 'Unauthorized', 401);
+  const accessToken = await resolveNonce(nonce, env.NONCE_KV);
+  if (!accessToken) return jsonError(cors, 'Unauthorized', 401);
 
-  let accessToken: string;
-  try {
-    const parsed = JSON.parse(nonceData) as { uid?: string; accessToken?: string };
-    if (!parsed.accessToken) return jsonError(cors, 'Unauthorized', 401);
-    accessToken = parsed.accessToken;
-  } catch {
-    return jsonError(cors, 'Unauthorized', 401);
+  const range = request.headers.get('Range');
+
+  // ── Cloudflare エッジキャッシュを確認 ────────────────────────────────────────
+  // fileId + Range をキーにすることで、一度取得したセグメントをエッジから再利用できる。
+  // シーク・リプレイ時に Google Drive へのラウンドトリップが不要になる。
+  const rangeKey = range ? encodeURIComponent(range) : 'full';
+  const cacheKey = new Request(`https://cache.drive-proxy/${encodeURIComponent(fileId)}/${rangeKey}`);
+  const cache = caches.default;
+  const cached = await cache.match(cacheKey);
+  if (cached) {
+    const h = new Headers(cached.headers);
+    for (const [k, v] of Object.entries(cors)) h.set(k, v);
+    return new Response(cached.body, { status: cached.status, headers: h });
   }
 
+  // ── Google Drive からストリーミング取得 ──────────────────────────────────────
   const driveUrl = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&acknowledgeAbuse=true&supportsAllDrives=true`;
-  const headers: Record<string, string> = {
+  const driveHeaders: Record<string, string> = {
     Authorization: `Bearer ${accessToken}`,
     Accept: 'video/*,application/octet-stream',
   };
-  const range = request.headers.get('Range');
-  if (range) headers['Range'] = range;
+  if (range) driveHeaders['Range'] = range;
 
-  const resp = await fetch(driveUrl, { headers });
+  const resp = await fetch(driveUrl, { headers: driveHeaders });
 
   // Drive がトランスコード処理中の場合、HTML のエラーページが返ってくる
   const contentType = resp.headers.get('Content-Type') ?? '';
@@ -207,6 +242,21 @@ async function handleStream(
   }
   if (!respHeaders['Content-Type']) respHeaders['Content-Type'] = 'video/mp4';
   respHeaders['Cache-Control'] = 'private, max-age=3600';
+
+  // ── ボディを tee してブラウザ配信と同時にエッジキャッシュへ書き込む ──────────
+  if (resp.body && (resp.status === 200 || resp.status === 206)) {
+    const cacheHeaders: Record<string, string> = {};
+    for (const h of ['Content-Type', 'Content-Length', 'Content-Range', 'Accept-Ranges']) {
+      const v = resp.headers.get(h);
+      if (v) cacheHeaders[h] = v;
+    }
+    if (!cacheHeaders['Content-Type']) cacheHeaders['Content-Type'] = 'video/mp4';
+    cacheHeaders['Cache-Control'] = 'public, max-age=3600';
+
+    const [browserBody, cacheBody] = resp.body.tee();
+    ctx.waitUntil(cache.put(cacheKey, new Response(cacheBody, { status: resp.status, headers: cacheHeaders })));
+    return new Response(browserBody, { status: resp.status, headers: respHeaders });
+  }
 
   return new Response(resp.body, { status: resp.status, headers: respHeaders });
 }
@@ -333,7 +383,7 @@ async function handleRefresh(
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const allowedOrigins = env.ALLOWED_ORIGIN.split(',').map(s => s.trim()).filter(Boolean);
     const cors = corsHeaders(request.headers.get('Origin'), allowedOrigins);
 
@@ -346,7 +396,7 @@ export default {
 
       const streamMatch = url.pathname.match(/^\/stream\/([^/]+)$/);
       if (streamMatch && request.method === 'GET') {
-        return handleStream(request, env, cors, streamMatch[1]);
+        return handleStream(request, env, cors, streamMatch[1], ctx);
       }
 
       if (url.pathname === '/nonce' && request.method === 'POST') {
