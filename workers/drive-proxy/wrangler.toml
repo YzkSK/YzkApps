@@ -13,7 +13,7 @@ PUBLIC_JWK_CACHE_KEY = "firebase-public-jwk"
 # GOOGLE_SERVICE_ACCOUNT
 
 # KV Namespaces
-# ストリーミング用短命 nonce のストレージ（TTL: 300秒）
+# ストリーミング用短命 nonce のストレージ（TTL: 3600秒）
 [[kv_namespaces]]
 binding = "NONCE_KV"
 id = "41b5b9f486f74e26932955a858d804e3"
