@@ -66,7 +66,7 @@ workers/drive-proxy/
 
 | エンドポイント | 用途 |
 |---|---|
-| `GET /stream/{fileId}?token=` | 動画ストリーミング（Range ヘッダープロキシ） |
+| `GET /stream/{fileId}?token=` | 動画ストリーミング（Range ヘッダープロキシ）。nonce の TTL は 3600 秒（1時間） |
 | `POST /oauth/exchange` | `{ code, uid, idToken, redirectUri }` → トークン交換・Firestore 保存 |
 | `POST /oauth/refresh` | `{ uid, idToken }` → リフレッシュトークンで accessToken 更新 |
 
@@ -206,6 +206,10 @@ type Modal =
 | Google Drive 処理中 | 「Google Drive が動画を処理中です」メッセージ |
 | コーデック非対応（`videoWidth === 0`） | 黄色い警告バナー（H.265、ハードウェアアクセラレーション有効化を案内） |
 | その他エラー | 「動画を読み込めませんでした」＋再試行ボタン |
+
+### nonce 期限切れ時の自動復旧
+
+`onError` 発火時、まず `fetchNonce` で新しい nonce を再取得する（旧 nonce の有効期限切れに対応）。取得成功時は現在の再生位置を `nonceRefreshTimeRef` に保存し、`videoNonce` を更新して動画を再ロード。`onCanPlay` 時に保存位置へシークして再生を継続する。nonce 取得も失敗した場合のみ Drive の処理中判定を行い、`setVideoError` でエラー表示する。
 
 ### キーボードショートカット
 

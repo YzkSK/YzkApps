@@ -130,6 +130,8 @@ export const VideoPlayer = () => {
   const doubleTapAccumTotalRef = useRef(0);
   const singleTapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isFirstFileRef = useRef(true);
+  // nonce 期限切れによる onError 後にシーク位置を復元するための一時記録
+  const nonceRefreshTimeRef = useRef<number | null>(null);
   const [doubleTapSide, setDoubleTapSide] = useState<'left' | 'right' | null>(null);
   const [doubleTapTotal, setDoubleTapTotal] = useState(0);
   const [doubleTapKey, setDoubleTapKey] = useState(0);
@@ -668,26 +670,37 @@ export const VideoPlayer = () => {
           onCanPlay={() => {
             setWaiting(false);
             setIsBufferReady(true);
-            // ビデオトラックが描画されない場合（コーデック非対応）を検知
             const v = videoRef.current;
-            if (v && v.readyState >= 3 && v.videoWidth === 0 && v.duration > 0) {
+            if (!v) return;
+            // nonce 更新後の再ロードであれば元の再生位置に戻す
+            if (nonceRefreshTimeRef.current !== null) {
+              v.currentTime = nonceRefreshTimeRef.current;
+              nonceRefreshTimeRef.current = null;
+            }
+            // ビデオトラックが描画されない場合（コーデック非対応）を検知
+            if (v.readyState >= 3 && v.videoWidth === 0 && v.duration > 0) {
               setVideoError('codec');
             }
           }}
           onError={async () => {
             try {
-              // nonce が期限切れの可能性があるため再取得を試みる
-              let nonce = videoNonce;
-              if (accessToken && !nonce) {
-                nonce = await fetchNonce(accessToken);
-                if (nonce) setVideoNonce(nonce);
+              if (!accessToken) { setVideoError('error'); return; }
+              // nonce が期限切れの可能性があるため常に再取得する
+              const newNonce = await fetchNonce(accessToken);
+              if (newNonce) {
+                // 現在の再生位置を保存してから nonce を更新（src が変わり動画がリロードされるため）
+                nonceRefreshTimeRef.current = videoRef.current?.currentTime ?? null;
+                setVideoNonce(newNonce);
+                return;
               }
-              const streamUrl = nonce
-                ? `${proxyUrl}/stream/${encodeURIComponent(fileId)}?token=${encodeURIComponent(nonce)}`
-                : '';
-              if (!streamUrl) { setVideoError('error'); return; }
-              const res = await fetch(streamUrl, { method: 'HEAD' });
-              setVideoError(res.status === 503 ? 'processing' : 'error');
+              // nonce 再取得も失敗した場合は Drive 処理中か判定
+              const fallbackNonce = videoNonce;
+              if (!fallbackNonce) { setVideoError('error'); return; }
+              const res = await fetch(
+                `${proxyUrl}/stream/${encodeURIComponent(fileId)}?token=${encodeURIComponent(fallbackNonce)}`,
+                { method: 'HEAD' },
+              ).catch(() => null);
+              setVideoError(res?.status === 503 ? 'processing' : 'error');
             } catch {
               setVideoError('error');
             }

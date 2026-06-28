@@ -120,7 +120,8 @@ function jsonError(cors: Record<string, string>, msg: string, status: number): R
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
 // nonce → { uid, accessToken } のマッピングを NONCE_KV に保存する TTL（秒）
-const NONCE_TTL_SECONDS = 300;
+// Google Drive のアクセストークン有効期限（約1時間）に合わせて 3600 秒に設定する
+const NONCE_TTL_SECONDS = 3600;
 
 /**
  * POST /nonce: idToken を検証し、短命 nonce を発行する。
